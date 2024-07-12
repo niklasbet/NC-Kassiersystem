@@ -5,24 +5,29 @@ export default class Bill {
     currywurst: number;
     schaschlik: number;
     bratwurst: number;
+    lahmacun: number;
 
     fries_price: Float;
     currywurst_price: Float;
     bratwurst_price: Float;
     schaschlik_price: Float;
+    lahmacun_price: Float;
 
     constructor() {
         this.fries = 0;
-        this.fries_price = 1.5;
+        this.fries_price = 2;
 
         this.currywurst = 0;
         this.currywurst_price = 2.5;
 
         this.schaschlik = 0;
-        this.schaschlik_price = 1;
+        this.schaschlik_price = 3.5;
 
         this.bratwurst = 0;
         this.bratwurst_price = 2;
+
+        this.lahmacun = 0;
+        this.lahmacun_price = 3;
     }
 
     addFries() {
@@ -32,7 +37,7 @@ export default class Bill {
         return this.fries;
     }
     deleteFries() {
-        if(this.fries > 0) {
+        if (this.fries > 0) {
             this.fries--;
         }
     }
@@ -44,7 +49,7 @@ export default class Bill {
         return this.currywurst;
     }
     deleteCurrywurst() {
-        if(this.currywurst > 0) {
+        if (this.currywurst > 0) {
             this.currywurst--;
         }
     }
@@ -56,7 +61,7 @@ export default class Bill {
         return this.schaschlik;
     }
     deleteSchaschlik() {
-        if(this.schaschlik > 0) {
+        if (this.schaschlik > 0) {
             this.schaschlik--;
         }
     }
@@ -68,17 +73,30 @@ export default class Bill {
         return this.bratwurst;
     }
     deleteBratwurst() {
-        if(this.bratwurst > 0) {
+        if (this.bratwurst > 0) {
             this.bratwurst--;
         }
     }
 
-    calculatePrice() : Float {
+    addLahmacun() {
+        this.lahmacun++;
+    }
+    getLahmacun(): number {
+        return this.lahmacun;
+    }
+    deleteLahmacun() {
+        if (this.lahmacun > 0) {
+            this.lahmacun--;
+        }
+    }
+
+    calculatePrice(): Float {
         var price = 0;
         price += this.fries * this.fries_price;
         price += this.currywurst * this.currywurst_price;
         price += this.schaschlik * this.schaschlik_price;
         price += this.bratwurst * this.bratwurst_price;
+        price += this.lahmacun * this.lahmacun_price;
 
         return price;
     }
@@ -88,17 +106,21 @@ export default class Bill {
         this.currywurst = 0;
         this.schaschlik = 0;
         this.bratwurst = 0;
+        this.lahmacun = 0;
     }
 
-    toString() : string {
+    toString(): string {
         let str = "";
 
         str += this.fries > 0 ? this.fries + "x Fries " + this.fries_price + "€\n" : "";
         str += this.currywurst > 0 ? this.currywurst + "x Currywurst " + this.currywurst_price + "€\n" : "";
         str += this.schaschlik > 0 ? this.schaschlik + "x Schaschlik " + this.schaschlik_price + "€\n" : "";
-        str += this.bratwurst > 0 ? this.bratwurst + "x Bratwurst " + this.bratwurst_price + "€\n\n" : "";
+        str += this.bratwurst > 0 ? this.bratwurst + "x Bratwurst " + this.bratwurst_price + "€\n" : "";
+        str += this.lahmacun > 0 ? this.lahmacun + "x Lahmacun " + this.lahmacun_price + "€\n\n" : "";
 
-        str += "Total: " + this.calculatePrice() + "€\n";
+        if (this.calculatePrice() > 0) {
+            str += "Total: " + this.calculatePrice() + "€\n";
+        }
 
         return str;
     }

@@ -1,102 +1,271 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
-import { StyleSheet, Image, Platform } from 'react-native';
-
-import { Collapsible } from '@/components/Collapsible';
-import { ExternalLink } from '@/components/ExternalLink';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
 import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
+import { Pressable, StyleSheet, View, ViewBase, Alert } from 'react-native';
+
+import { ScrollView } from 'react-native';
+import PieChart from 'react-native-pie-chart';
+import { useState } from 'react';
+import { stats } from '../globals';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function TabTwoScreen() {
+  const [totalIncome, setTotalIncome] = useState(stats.totalIncome)
+  const [totalFries, setTotalFries] = useState(stats.totalFries)
+  const [totalBratwurst, setTotalBratwurst] = useState(stats.totalBratwurst)
+  const [totalCurrywurst, setTotalCurrywurst] = useState(stats.totalCurrywurst)
+  const [totalSchaschlik, setTotalSchaschlik] = useState(stats.totalSchaschlik)
+  const [totalLahmacun, setTotalLahmacun] = useState(stats.totalLahmacun)
+  const [totalSoldProducts, setTotalSoldProducts] = useState(stats.totalSoldProducts)
+  const [dummy, setDummy] = useState(1)
+
+  const [day1Button, setDay1Button] = useState(stats.day == 1 ? '#307B30' : '#007BFF')
+  const [day2Button, setDay2Button] = useState(stats.day == 2 ? '#307B30' : '#007BFF')
+  const [day3Button, setDay3Button] = useState(stats.day == 3 ? '#307B30' : '#007BFF')
+
+  const createTwoButtonAlert = () =>
+    Alert.alert('Alert Title', 'My Alert Msg', [
+      {
+        text: 'Cancel',
+        onPress: () => console.log('Cancel Pressed'),
+        style: 'cancel',
+      },
+      { text: 'OK', onPress: () => console.log('OK Pressed') },
+    ]);
+
+  const widthAndHeight = 200
+  const series = [dummy, totalFries, totalBratwurst, totalCurrywurst, totalSchaschlik, totalLahmacun]
+  const sliceColor = ['#303030', '#fbd203', '#ffb300', '#ff9100', '#ff6c00', '#ff3c00']
+
+  const interval = setInterval(() => {
+    if (stats.totalFries + stats.totalBratwurst + stats.totalCurrywurst + stats.totalSchaschlik + stats.totalLahmacun == 0) {
+      setDummy(1);
+    }
+
+    setTotalFries(stats.totalFries);
+    setTotalBratwurst(stats.totalBratwurst);
+    setTotalCurrywurst(stats.totalCurrywurst);
+    setTotalSchaschlik(stats.totalSchaschlik);
+    setTotalLahmacun(stats.totalLahmacun);
+    setTotalIncome(stats.totalIncome);
+    setTotalSoldProducts(stats.totalSoldProducts);
+
+    if (stats.totalFries + stats.totalBratwurst + stats.totalCurrywurst + stats.totalSchaschlik + stats.totalLahmacun > 0) {
+      setDummy(0);
+    }
+  }, 2000);
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#D0D0D0', dark: '#353636' }}
-      headerImage={<Ionicons size={310} name="code-slash" style={styles.headerImage} />}>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Explore</ThemedText>
-      </ThemedView>
-      <ThemedText>This app includes example code to help you get started.</ThemedText>
-      <Collapsible title="File-based routing">
-        <ThemedText>
-          This app has two screens:{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/explore.tsx</ThemedText>
-        </ThemedText>
-        <ThemedText>
-          The layout file in <ThemedText type="defaultSemiBold">app/(tabs)/_layout.tsx</ThemedText>{' '}
-          sets up the tab navigator.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/router/introduction">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Android, iOS, and web support">
-        <ThemedText>
-          You can open this project on Android, iOS, and the web. To open the web version, press{' '}
-          <ThemedText type="defaultSemiBold">w</ThemedText> in the terminal running this project.
-        </ThemedText>
-      </Collapsible>
-      <Collapsible title="Images">
-        <ThemedText>
-          For static images, you can use the <ThemedText type="defaultSemiBold">@2x</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">@3x</ThemedText> suffixes to provide files for
-          different screen densities
-        </ThemedText>
-        <Image source={require('@/assets/images/react-logo.png')} style={{ alignSelf: 'center' }} />
-        <ExternalLink href="https://reactnative.dev/docs/images">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Custom fonts">
-        <ThemedText>
-          Open <ThemedText type="defaultSemiBold">app/_layout.tsx</ThemedText> to see how to load{' '}
-          <ThemedText style={{ fontFamily: 'SpaceMono' }}>
-            custom fonts such as this one.
-          </ThemedText>
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/versions/latest/sdk/font">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Light and dark mode components">
-        <ThemedText>
-          This template has light and dark mode support. The{' '}
-          <ThemedText type="defaultSemiBold">useColorScheme()</ThemedText> hook lets you inspect
-          what the user's current color scheme is, and so you can adjust UI colors accordingly.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Animations">
-        <ThemedText>
-          This template includes an example of an animated component. The{' '}
-          <ThemedText type="defaultSemiBold">components/HelloWave.tsx</ThemedText> component uses
-          the powerful <ThemedText type="defaultSemiBold">react-native-reanimated</ThemedText> library
-          to create a waving hand animation.
-        </ThemedText>
-        {Platform.select({
-          ios: (
-            <ThemedText>
-              The <ThemedText type="defaultSemiBold">components/ParallaxScrollView.tsx</ThemedText>{' '}
-              component provides a parallax effect for the header image.
-            </ThemedText>
-          ),
-        })}
-      </Collapsible>
-    </ParallaxScrollView>
+    <View style={styles.wholeDisplay}>
+
+      <View style={{ marginTop: 60, alignSelf: 'center', justifyContent: 'center', flexDirection: 'row', width: '100%' }}>
+        <View style={styles.topButtonsView}>
+          <Pressable style={{ alignSelf: 'center', alignItems: 'center', width: '70%', backgroundColor: day1Button, borderRadius: 5 }}
+            onPress={async () => {
+              setDay1Button('#307B30');
+              setDay2Button('#007BFF');
+              setDay3Button('#007BFF');
+              await AsyncStorage.setItem('day', '1');
+              stats.changeToDay();
+            }}>
+            <ThemedText>Tag 1</ThemedText>
+          </Pressable>
+        </View>
+        <View style={styles.topButtonsView}>
+          <Pressable style={{ alignSelf: 'center', alignItems: 'center', width: '70%', backgroundColor: day2Button, borderRadius: 5 }}
+            onPress={async () => {
+              setDay2Button('#307B30');
+              setDay1Button('#007BFF');
+              setDay3Button('#007BFF');
+              await AsyncStorage.setItem('day', '2');
+              stats.changeToDay();
+            }}>
+            <ThemedText>Tag 2</ThemedText>
+          </Pressable>
+        </View>
+        <View style={styles.topButtonsView}>
+          <Pressable style={{ alignSelf: 'center', alignItems: 'center', width: '70%', backgroundColor: day3Button, borderRadius: 5 }}
+            onPress={async () => {
+              setDay3Button('#307B30');
+              setDay2Button('#007BFF');
+              setDay1Button('#007BFF');
+              await AsyncStorage.setItem('day', '3');
+              stats.changeToDay();
+            }}>
+            <ThemedText>Tag 3</ThemedText>
+          </Pressable>
+        </View>
+      </View>
+
+
+      <ScrollView>
+        <ThemedText type="title" style={{ marginTop: -30 }}></ThemedText>
+        <ThemedText type="title" style={styles.titleContainer}>Totale Verkäufe</ThemedText>
+
+        <View style={styles.vertical}>
+          <View style={styles.halfDisplay}>
+            <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>Total eingenommen:</ThemedText>
+            <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>Pommes:</ThemedText>
+            <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>Bratwurst:</ThemedText>
+            <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>Currywurst:</ThemedText>
+            <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>Schaschlik:</ThemedText>
+            <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>Lahmacun:</ThemedText>
+          </View>
+          <View style={styles.halfDisplay}>
+            <ThemedText type="subtitle" style={styles.middle}>{totalIncome}€</ThemedText>
+            <ThemedText type="subtitle" style={styles.middle}>{totalFries}x</ThemedText>
+            <ThemedText type="subtitle" style={styles.middle}>{totalBratwurst}x</ThemedText>
+            <ThemedText type="subtitle" style={styles.middle}>{totalCurrywurst}x</ThemedText>
+            <ThemedText type="subtitle" style={styles.middle}>{totalSchaschlik}x</ThemedText>
+            <ThemedText type="subtitle" style={styles.middle}>{totalLahmacun}x</ThemedText>
+          </View>
+        </View>
+
+        <ThemedText type="title" style={styles.titleContainer}>Verkaufsverteilung</ThemedText>
+        <View style={styles.vertical}>
+          <PieChart style={styles.middle} widthAndHeight={widthAndHeight} series={series} sliceColor={sliceColor} />
+          <View style={styles.middle}>
+            <ThemedText style={{ color: sliceColor[1], marginLeft: 30 }}>Pommes {(totalFries * 100 / totalSoldProducts).toFixed(2)}%</ThemedText>
+            <ThemedText style={{ color: sliceColor[2], marginLeft: 30 }}>Bratwurst {(totalBratwurst * 100 / totalSoldProducts).toFixed(2)}%</ThemedText>
+            <ThemedText style={{ color: sliceColor[3], marginLeft: 30 }}>Currywurst {(totalCurrywurst * 100 / totalSoldProducts).toFixed(2)}%</ThemedText>
+            <ThemedText style={{ color: sliceColor[4], marginLeft: 30 }}>Schaschlik {(totalSchaschlik * 100 / totalSoldProducts).toFixed(2)}%</ThemedText>
+            <ThemedText style={{ color: sliceColor[5], marginLeft: 30 }}>Lahmacun {(totalLahmacun * 100 / totalSoldProducts).toFixed(2)}%</ThemedText>
+          </View>
+        </View>
+
+        <Pressable style={styles.buttonRed}
+          onLongPress={() => {
+            createTwoButtonAlert
+            stats.reset();
+          }}>
+          <ThemedText style={styles.middle}>Remove Day</ThemedText>
+        </Pressable>
+      </ScrollView>
+
+    </View >
   );
 }
 
 const styles = StyleSheet.create({
-  headerImage: {
-    color: '#808080',
-    bottom: -90,
-    left: -35,
-    position: 'absolute',
+  buttonRed: {
+    backgroundColor: '#FF0000',
+    alignSelf: 'center',
+    justifyContent: 'center',
+    width: '30%',
+    height: '7%',
+    borderRadius: 10,
+    marginTop: 50
+  },
+  topButtonsView: {
+    alignSelf: 'center',
+    //alignContent: 'center',
+    alignItems: 'center',
+    width: '20%',
+    //backgroundColor: 'gray',
+  },
+  topButtons: {
+    alignSelf: 'center',
+    alignItems: 'center',
+    width: '70%',
+    backgroundColor: '#007BFF',
+    borderRadius: 5,
+  },
+  middle: {
+    //justifyContent: 'center',
+    //alignItems: 'center',
+    alignSelf: 'center',
+  },
+  wholeDisplay: {
+    //backgroundColor: 'lightgray',
+    height: '100%',
+    width: '100%',
+  },
+  halfDisplay: {
+    //backgroundColor: 'lightgray',
+    //height: '100%',
+    width: '50%',
+  },
+  rightSide: {
+    //backgroundColor: 'gray',
+    height: '100%',
+    width: '40%',
   },
   titleContainer: {
+    marginTop: 50,
+    marginBottom: 30,
     flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: 3,
+  },
+  titleTwoContainer: {
+    marginTop: 30,
+    marginBottom: 20,
+    fontWeight: 'bold',
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
     gap: 8,
   },
+  stepContainer: {
+    gap: 8,
+    marginBottom: 8,
+  },
+  reactLogo: {
+    height: 178,
+    width: 290,
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+  },
+  horizontal: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  vertical: {
+    marginHorizontal: 5,
+    flexDirection: 'row',
+    //justifyContent: 'center',
+    //height: '100%',
+    width: '100%',
+    //backgroundColor: 'gray',
+  },
+  button: {
+    padding: 15,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    margin: 10,
+    width: '40%',
+    height: 100,
+    marginBottom: 10,
+    backgroundColor: "#007BFF",
+    shadowColor: 'white',
+    shadowOffset: { width: -4, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+  },
+  imageLikeButton: {
+    width: '160%',
+    height: '160%',
+    //resizeMode: 'contain',
+    borderRadius: 25,
+  },
+  textInImage: {
+    position: 'absolute',
+    color: '#000000',
+    bottom: 0,
+    right: 0,
+    fontSize: 25,
+    fontWeight: 'bold',
+    shadowColor: '#FFFFFF',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 3,
+  },
+  textBlue: {
+    color: "#007BFF",
+  },
+  textRed: {
+    color: "#FF0000",
+  }
 });
