@@ -4,23 +4,33 @@ import React from 'react';
 import { TabBarIcon } from '@/components/navigation/TabBarIcon';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
-import { AntDesign, Entypo } from '@expo/vector-icons';
+import { AntDesign, Entypo, FontAwesome6 } from '@expo/vector-icons';
+import { DarkTheme, useTheme } from '@react-navigation/native';
+import { BackHandler } from 'react-native';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
 
+//marvin war hierrrr
+
   return (
     <Tabs
+      tabBarActiveTintColor='#202020'
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
-      }}>
+        tabBarStyle: {
+          backgroundColor: '#202020',
+        }
+      }}
+      useTheme={DarkTheme}
+      >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Kassieren',
+          title: 'Kasse',
           tabBarIcon: ({ color, focused }) => (
-            <Entypo name="credit" size={24} color={color} />
+            // <Entypo name="credit" size={24} color={color} />
+            <FontAwesome6 name="cash-register" size={24} color={color} />
           ),
         }}
       />

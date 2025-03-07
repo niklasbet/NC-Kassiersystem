@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { stats } from '../globals';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Button, Dialog, PaperProvider, Portal } from 'react-native-paper';
 
 export default function TabTwoScreen() {
   const [totalIncome, setTotalIncome] = useState(stats.totalIncome)
@@ -21,6 +22,10 @@ export default function TabTwoScreen() {
   const [day1Button, setDay1Button] = useState(stats.day == 1 ? '#307B30' : '#007BFF')
   const [day2Button, setDay2Button] = useState(stats.day == 2 ? '#307B30' : '#007BFF')
   const [day3Button, setDay3Button] = useState(stats.day == 3 ? '#307B30' : '#007BFF')
+
+  const [visible, setVisible] = useState(false);
+  const showDialog = () => setVisible(true);
+  const hideDialog = () => setVisible(false);
 
   const createTwoButtonAlert = () =>
     Alert.alert('Alert Title', 'My Alert Msg', [
@@ -55,93 +60,113 @@ export default function TabTwoScreen() {
   }, 2000);
 
   return (
-    <View style={styles.wholeDisplay}>
+    <PaperProvider>
+      <View style={styles.wholeDisplay}>
 
-      <View style={{ marginTop: 60, alignSelf: 'center', justifyContent: 'center', flexDirection: 'row', width: '100%' }}>
-        <View style={styles.topButtonsView}>
-          <Pressable style={{ alignSelf: 'center', alignItems: 'center', width: '70%', backgroundColor: day1Button, borderRadius: 5 }}
-            onPress={async () => {
-              setDay1Button('#307B30');
-              setDay2Button('#007BFF');
-              setDay3Button('#007BFF');
-              await AsyncStorage.setItem('day', '1');
-              stats.changeToDay();
-            }}>
-            <ThemedText>Tag 1</ThemedText>
-          </Pressable>
-        </View>
-        <View style={styles.topButtonsView}>
-          <Pressable style={{ alignSelf: 'center', alignItems: 'center', width: '70%', backgroundColor: day2Button, borderRadius: 5 }}
-            onPress={async () => {
-              setDay2Button('#307B30');
-              setDay1Button('#007BFF');
-              setDay3Button('#007BFF');
-              await AsyncStorage.setItem('day', '2');
-              stats.changeToDay();
-            }}>
-            <ThemedText>Tag 2</ThemedText>
-          </Pressable>
-        </View>
-        <View style={styles.topButtonsView}>
-          <Pressable style={{ alignSelf: 'center', alignItems: 'center', width: '70%', backgroundColor: day3Button, borderRadius: 5 }}
-            onPress={async () => {
-              setDay3Button('#307B30');
-              setDay2Button('#007BFF');
-              setDay1Button('#007BFF');
-              await AsyncStorage.setItem('day', '3');
-              stats.changeToDay();
-            }}>
-            <ThemedText>Tag 3</ThemedText>
-          </Pressable>
-        </View>
-      </View>
-
-
-      <ScrollView>
-        <ThemedText type="title" style={{ marginTop: -30 }}></ThemedText>
-        <ThemedText type="title" style={styles.titleContainer}>Totale Verkäufe</ThemedText>
-
-        <View style={styles.vertical}>
-          <View style={styles.halfDisplay}>
-            <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>Total eingenommen:</ThemedText>
-            <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>Pommes:</ThemedText>
-            <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>Bratwurst:</ThemedText>
-            <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>Currywurst:</ThemedText>
-            <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>Schaschlik:</ThemedText>
-            <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>Lahmacun:</ThemedText>
+        <View style={{ marginTop: 60, alignSelf: 'center', justifyContent: 'center', flexDirection: 'row', width: '100%' }}>
+          <View style={styles.topButtonsView}>
+            <Pressable style={{ alignSelf: 'center', alignItems: 'center', width: '70%', backgroundColor: day1Button, borderRadius: 5 }}
+              onPress={async () => {
+                setDay1Button('#307B30');
+                setDay2Button('#007BFF');
+                setDay3Button('#007BFF');
+                await AsyncStorage.setItem('day', '1');
+                stats.changeToDay();
+              }}>
+              <ThemedText>Tag 1</ThemedText>
+            </Pressable>
           </View>
-          <View style={styles.halfDisplay}>
-            <ThemedText type="subtitle" style={styles.middle}>{totalIncome}€</ThemedText>
-            <ThemedText type="subtitle" style={styles.middle}>{totalFries}x</ThemedText>
-            <ThemedText type="subtitle" style={styles.middle}>{totalBratwurst}x</ThemedText>
-            <ThemedText type="subtitle" style={styles.middle}>{totalCurrywurst}x</ThemedText>
-            <ThemedText type="subtitle" style={styles.middle}>{totalSchaschlik}x</ThemedText>
-            <ThemedText type="subtitle" style={styles.middle}>{totalLahmacun}x</ThemedText>
+          <View style={styles.topButtonsView}>
+            <Pressable style={{ alignSelf: 'center', alignItems: 'center', width: '70%', backgroundColor: day2Button, borderRadius: 5 }}
+              onPress={async () => {
+                setDay2Button('#307B30');
+                setDay1Button('#007BFF');
+                setDay3Button('#007BFF');
+                await AsyncStorage.setItem('day', '2');
+                stats.changeToDay();
+              }}>
+              <ThemedText>Tag 2</ThemedText>
+            </Pressable>
+          </View>
+          <View style={styles.topButtonsView}>
+            <Pressable style={{ alignSelf: 'center', alignItems: 'center', width: '70%', backgroundColor: day3Button, borderRadius: 5 }}
+              onPress={async () => {
+                setDay3Button('#307B30');
+                setDay2Button('#007BFF');
+                setDay1Button('#007BFF');
+                await AsyncStorage.setItem('day', '3');
+                stats.changeToDay();
+              }}>
+              <ThemedText>Tag 3</ThemedText>
+            </Pressable>
           </View>
         </View>
 
-        <ThemedText type="title" style={styles.titleContainer}>Verkaufsverteilung</ThemedText>
-        <View style={styles.vertical}>
-          <PieChart style={styles.middle} widthAndHeight={widthAndHeight} series={series} sliceColor={sliceColor} />
-          <View style={styles.middle}>
-            <ThemedText style={{ color: sliceColor[1], marginLeft: 30 }}>Pommes {(totalFries * 100 / totalSoldProducts).toFixed(2)}%</ThemedText>
-            <ThemedText style={{ color: sliceColor[2], marginLeft: 30 }}>Bratwurst {(totalBratwurst * 100 / totalSoldProducts).toFixed(2)}%</ThemedText>
-            <ThemedText style={{ color: sliceColor[3], marginLeft: 30 }}>Currywurst {(totalCurrywurst * 100 / totalSoldProducts).toFixed(2)}%</ThemedText>
-            <ThemedText style={{ color: sliceColor[4], marginLeft: 30 }}>Schaschlik {(totalSchaschlik * 100 / totalSoldProducts).toFixed(2)}%</ThemedText>
-            <ThemedText style={{ color: sliceColor[5], marginLeft: 30 }}>Lahmacun {(totalLahmacun * 100 / totalSoldProducts).toFixed(2)}%</ThemedText>
+
+        <ScrollView>
+          <ThemedText type="title" style={{ marginTop: -30 }}></ThemedText>
+          <ThemedText type="title" style={styles.titleContainer}>Totale Verkäufe</ThemedText>
+
+          <View style={styles.vertical}>
+            <View style={styles.halfDisplay}>
+              <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>Total eingenommen:</ThemedText>
+              <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>Pommes:</ThemedText>
+              <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>Bratwurst:</ThemedText>
+              <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>Currywurst:</ThemedText>
+              <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>Schaschlik:</ThemedText>
+              <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>Lahmacun:</ThemedText>
+            </View>
+            <View style={styles.halfDisplay}>
+              <ThemedText type="subtitle" style={styles.middle}>{totalIncome}€</ThemedText>
+              <ThemedText type="subtitle" style={styles.middle}>{totalFries}x</ThemedText>
+              <ThemedText type="subtitle" style={styles.middle}>{totalBratwurst}x</ThemedText>
+              <ThemedText type="subtitle" style={styles.middle}>{totalCurrywurst}x</ThemedText>
+              <ThemedText type="subtitle" style={styles.middle}>{totalSchaschlik}x</ThemedText>
+              <ThemedText type="subtitle" style={styles.middle}>{totalLahmacun}x</ThemedText>
+            </View>
           </View>
-        </View>
 
-        <Pressable style={styles.buttonRed}
-          onLongPress={() => {
-            createTwoButtonAlert
-            stats.reset();
-          }}>
-          <ThemedText style={styles.middle}>Remove Day</ThemedText>
-        </Pressable>
-      </ScrollView>
+          <ThemedText type="title" style={styles.titleContainer}>Verkaufsverteilung</ThemedText>
+          <View style={styles.vertical2}>
+            <PieChart style={styles.middle} widthAndHeight={widthAndHeight} series={series} sliceColor={sliceColor} />
+            <View style={styles.middle}>
+              <ThemedText style={{ color: sliceColor[1], marginLeft: 30 }}>Pommes {(totalFries * 100 / totalSoldProducts).toFixed(2)}%</ThemedText>
+              <ThemedText style={{ color: sliceColor[2], marginLeft: 30 }}>Bratwurst {(totalBratwurst * 100 / totalSoldProducts).toFixed(2)}%</ThemedText>
+              <ThemedText style={{ color: sliceColor[3], marginLeft: 30 }}>Currywurst {(totalCurrywurst * 100 / totalSoldProducts).toFixed(2)}%</ThemedText>
+              <ThemedText style={{ color: sliceColor[4], marginLeft: 30 }}>Schaschlik {(totalSchaschlik * 100 / totalSoldProducts).toFixed(2)}%</ThemedText>
+              <ThemedText style={{ color: sliceColor[5], marginLeft: 30 }}>Lahmacun {(totalLahmacun * 100 / totalSoldProducts).toFixed(2)}%</ThemedText>
+            </View>
+          </View>
 
-    </View >
+          <Pressable style={styles.buttonRed}
+            onLongPress={() => {
+              createTwoButtonAlert
+              showDialog();
+              // stats.reset();
+            }}>
+            <ThemedText style={styles.middle}>Tag zurücksetzen</ThemedText>
+          </Pressable>
+        </ScrollView>
+
+      </View >
+
+      <Portal>
+        <Dialog visible={visible} onDismiss={hideDialog}>
+          <Dialog.Title>Warnung</Dialog.Title>
+          <Dialog.Content>
+            <ThemedText>Wirklich löschen?</ThemedText>
+            <ThemedText>Die Statistik kann danach nicht mehr wiederhergestellt werden!</ThemedText>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => {
+              stats.reset();
+              hideDialog();
+            }}>Ja</Button>
+            <Button onPress={hideDialog}>Nein</Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+    </PaperProvider>
   );
 }
 
@@ -153,7 +178,8 @@ const styles = StyleSheet.create({
     width: '30%',
     height: '7%',
     borderRadius: 10,
-    marginTop: 50
+    marginTop: 50,
+    bottom: -150
   },
   topButtonsView: {
     alignSelf: 'center',
@@ -175,7 +201,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   wholeDisplay: {
-    //backgroundColor: 'lightgray',
+    backgroundColor: '#202020',
     height: '100%',
     width: '100%',
   },
@@ -225,6 +251,14 @@ const styles = StyleSheet.create({
     marginHorizontal: 5,
     flexDirection: 'row',
     //justifyContent: 'center',
+    //height: '100%',
+    width: '100%',
+    //backgroundColor: 'gray',
+  },
+  vertical2: {
+    // marginHorizontal: 120,
+    flexDirection: 'row',
+    justifyContent: 'center',
     //height: '100%',
     width: '100%',
     //backgroundColor: 'gray',
