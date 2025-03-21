@@ -4,10 +4,12 @@ import { ThemedText } from '@/components/ThemedText';
 import { ScrollView } from 'react-native';
 import Bill from '../bill';
 import { useState } from 'react';
-import { stats } from '../globals';
+import { productList, stats } from '../globals';
 import { Button, Dialog, PaperProvider, Portal } from 'react-native-paper';
+import { router, useFocusEffect } from 'expo-router';
+import React from 'react';
 
-let bill = new Bill();
+let bill = new Bill(0);
 
 export default function HomeScreen() {
   const [billText, setBillText] = useState(bill.toString());
@@ -16,94 +18,129 @@ export default function HomeScreen() {
   const showDialog = () => setVisible(true);
   const hideDialog = () => setVisible(false);
 
+  const [buttonInView, setButtonInView] = useState([] as React.JSX.Element[]);
+
+
+  const updateButtonFrontEnd = () => {
+    // console.log("updateButtonFrontEnd");
+    let buttons = [];
+
+    for (let i = 0; i < productList.getAll().length; i += 2) {
+      let image1: React.JSX.Element[] = [];
+
+      if (productList.getAll().length >= i + 2) {
+        for (let j = 0; j < 2; j++) {
+          var req = require("./../../assets/images/adaptive-icon.png");
+          if (productList.getAll()[i + j].name.toLowerCase() == 'pommes') {
+            req = require("./../../assets/images/pommes.jpg");
+          } else if (productList.getAll()[i + j].name.toLowerCase() == 'schaschlik') {
+            req = require("./../../assets/images/schaschlik.jpg");
+          } else if (productList.getAll()[i + j].name.toLowerCase() == 'bratwurst') {
+            req = require("./../../assets/images/bratwurst.jpg");
+          } else if (productList.getAll()[i + j].name.toLowerCase() == 'currywurst') {
+            req = require("./../../assets/images/currywurst.jpg");
+          } else if (productList.getAll()[i + j].name.toLowerCase() == 'lahmacun') {
+            req = require("./../../assets/images/lahmacun.jpg");
+          }
+
+          image1.push(<Image
+            style={styles.imageLikeButton}
+            source={req} />)
+        }
+
+        buttons.push(
+          <View style={styles.horizontal}>
+            <Pressable style={styles.button}
+              onPress={() => {
+                bill.addProduct(productList.getAll()[i], 1);
+                setBillText(bill.toString());
+              }}
+              onLongPress={() => {
+                bill.addProduct(productList.getAll()[i], -1);
+                setBillText(bill.toString());
+              }}>
+              {image1.at(0)}
+              <ThemedText style={styles.nameInImage}>{productList.getAll()[i].name}</ThemedText>
+              <ThemedText style={styles.textInImage}>{productList.getAll()[i].price}€</ThemedText>
+            </Pressable>
+
+            <Pressable style={styles.button}
+              onPress={() => {
+                bill.addProduct(productList.getAll()[i + 1], 1);
+                setBillText(bill.toString());
+              }}
+              onLongPress={() => {
+                bill.addProduct(productList.getAll()[i + 1], -1);
+                setBillText(bill.toString());
+              }}>
+              {image1.at(1)}
+              <ThemedText style={styles.nameInImage}>{productList.getAll()[i + 1].name}</ThemedText>
+              <ThemedText style={styles.textInImage}>{productList.getAll()[i + 1].price}€</ThemedText>
+            </Pressable>
+          </View>
+        );
+      } else {
+        var req = require("./../../assets/images/adaptive-icon.png");
+        if (productList.getAll()[i].name.toLowerCase() == 'pommes') {
+          req = require("./../../assets/images/pommes.jpg");
+        } else if (productList.getAll()[i].name.toLowerCase() == 'schaschlik') {
+          req = require("./../../assets/images/schaschlik.jpg");
+        } else if (productList.getAll()[i].name.toLowerCase() == 'bratwurst') {
+          req = require("./../../assets/images/bratwurst.jpg");
+        } else if (productList.getAll()[i].name.toLowerCase() == 'currywurst') {
+          req = require("./../../assets/images/currywurst.jpg");
+        } else if (productList.getAll()[i].name.toLowerCase() == 'lahmacun') {
+          req = require("./../../assets/images/lahmacun.jpg");
+        }
+
+        image1.push(<Image
+          style={styles.imageLikeButton}
+          source={req} />)
+
+        buttons.push(
+          <View style={styles.horizontal}>
+            <Pressable style={styles.button}
+              onPress={() => {
+                bill.addProduct(productList.getAll()[i], 1);
+                setBillText(bill.toString());
+              }}
+              onLongPress={() => {
+                bill.addProduct(productList.getAll()[i], -1);
+                setBillText(bill.toString());
+              }}>
+              {image1.at(0)}
+              <ThemedText style={styles.nameInImage}>{productList.getAll()[i].name}</ThemedText>
+              <ThemedText style={styles.textInImage}>{productList.getAll()[i].price}€</ThemedText>
+            </Pressable>
+          </View>
+        );
+      }
+
+    }
+    setButtonInView(buttons);
+  };
+
+  useFocusEffect(
+    React.useCallback(() => {
+      updateButtonFrontEnd();
+      // Do something when the screen is focused
+      return () => {
+        // Do something when the screen is unfocused
+        // Useful for cleanup functions
+      };
+    }, [])
+  );
+
   return (
     <PaperProvider>
       <View style={{ backgroundColor: '#000000' }}>
         <ThemedText type="title" style={styles.titleContainer}>Kasse</ThemedText>
-
         <View style={styles.vertical}>
           <ScrollView style={styles.wholeDisplay}>
-            <View style={styles.horizontal}>
-              <Pressable style={styles.button}
-                onPress={() => {
-                  bill.addFries();
-                  setBillText(bill.toString());
-                }}
-                onLongPress={() => {
-                  bill.deleteFries();
-                  setBillText(bill.toString());
-                }}>
-                <Image
-                  style={styles.imageLikeButton}
-                  source={require('./../../assets/images/pommes.jpg')} />
-                <ThemedText style={styles.textInImage}>{bill.fries_price}€</ThemedText>
-              </Pressable>
 
-              <Pressable style={styles.button}
-                onPress={() => {
-                  bill.addCurrywurst();
-                  setBillText(bill.toString());
-                }}
-                onLongPress={() => {
-                  bill.deleteCurrywurst();
-                  setBillText(bill.toString());
-                }}>
-                <Image
-                  style={styles.imageLikeButton}
-                  source={require('./../../assets/images/currywurst.jpg')} />
-                <ThemedText style={styles.textInImage}>{bill.currywurst_price}€</ThemedText>
-              </Pressable>
-            </View>
-
-            <View style={styles.horizontal}>
-              <Pressable style={styles.button}
-                onPress={() => {
-                  bill.addSchaschlik();
-                  setBillText(bill.toString());
-                }}
-                onLongPress={() => {
-                  bill.deleteSchaschlik();
-                  setBillText(bill.toString());
-                }}>
-                <Image
-                  style={styles.imageLikeButton}
-                  source={require('./../../assets/images/schaschlik.jpg')} />
-                <ThemedText style={styles.textInImage}>{bill.schaschlik_price}€</ThemedText>
-              </Pressable>
-
-              <Pressable style={styles.button}
-                onPress={() => {
-                  bill.addBratwurst();
-                  setBillText(bill.toString());
-                }}
-                onLongPress={() => {
-                  bill.deleteBratwurst();
-                  setBillText(bill.toString());
-                }}>
-                <Image
-                  style={styles.imageLikeButton}
-                  source={require('./../../assets/images/bratwurst.jpg')} />
-                <ThemedText style={styles.textInImage}>{bill.bratwurst_price}€</ThemedText>
-              </Pressable>
-            </View>
+            {buttonInView}
 
 
-            <View style={styles.horizontal}>
-              <Pressable style={styles.button}
-                onPress={() => {
-                  bill.addLahmacun();
-                  setBillText(bill.toString());
-                }}
-                onLongPress={() => {
-                  bill.deleteLahmacun();
-                  setBillText(bill.toString());
-                }}>
-                <Image
-                  style={styles.imageLikeButton}
-                  source={require('./../../assets/images/lahmacun.jpg')} />
-                <ThemedText style={styles.textInImage}>{bill.lahmacun_price}€</ThemedText>
-              </Pressable>
-            </View>
           </ScrollView>
 
 
@@ -128,7 +165,7 @@ export default function HomeScreen() {
 
                   bill.reset();
                   setBillText(bill.toString());
-                  console.log(stats);
+                  // console.log(stats);
                 }}>
                 <ThemedText style={styles.middle}>Fertig</ThemedText>
               </Pressable>
@@ -141,6 +178,13 @@ export default function HomeScreen() {
                   console.log("Delete");
                 }}>
                 <ThemedText style={styles.middle}>Löschen</ThemedText>
+              </Pressable>
+
+              <Pressable
+                onLongPress={() => {
+                  router.navigate('/buttonView');
+                }}>
+                <ThemedText style={styles.middle}>Buttons</ThemedText>
               </Pressable>
 
               <ThemedText>
@@ -170,7 +214,6 @@ export default function HomeScreen() {
             </Dialog.Actions>
           </Dialog>
         </Portal>
-
       </View>
     </PaperProvider>
   );
@@ -184,7 +227,7 @@ const styles = StyleSheet.create({
   wholeDisplay: {
     marginTop: 70,
     // backgroundColor: 'lightgray',
-    height: '100%',
+    height: '60%',
     width: '50%',
   },
   rightSide: {
@@ -250,7 +293,7 @@ const styles = StyleSheet.create({
     width: '40%',
     height: 120,
     marginBottom: 10,
-    backgroundColor: 'blue',
+    backgroundColor: '#202020',
     //shadowColor: 'white',
     //shadowOffset: { width: -4, height: 3 },
     //shadowOpacity: 0.3,
@@ -268,6 +311,26 @@ const styles = StyleSheet.create({
     bottom: 0,
     right: 0,
     fontSize: 25,
+    fontWeight: 'bold',
+    backgroundColor: '#FFFFFF',
+    alignSelf: 'center',
+    //shadowColor: '#FFFFFF',
+    //shadowOffset: { width: 0, height: 0 },
+    //shadowOpacity: 1,
+    //shadowRadius: 3,
+    paddingTop: 1,
+    height: 20,
+    //width: 60,
+    borderRadius: 5,
+    borderColor: '#FF0000',
+    //borderWidth: 1,
+  },
+  nameInImage: {
+    position: 'relative',
+    color: '#000000',
+    bottom: 80,
+    right: 'auto',
+    // fontSize: 25,
     fontWeight: 'bold',
     backgroundColor: '#FFFFFF',
     alignSelf: 'center',

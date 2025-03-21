@@ -11,7 +11,7 @@
             "type": "node-terminal"
         },
         {
-            "command": "npx expo start --tunnel",
+            "command": "npx expo start",
             "name": "Run expo server",
             "request": "launch",
             "type": "node-terminal"

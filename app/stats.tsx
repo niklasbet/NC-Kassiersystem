@@ -1,6 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Bill from "./bill";
 import { Float } from "react-native/Libraries/Types/CodegenTypes";
+import { cloneElement } from "react";
+import { productList } from "./globals";
 
 export async function saveStats(stats: Stats) {
     let str = 'stats' + stats.day;
@@ -8,33 +10,23 @@ export async function saveStats(stats: Stats) {
 }
 
 export default class Stats {
-    totalFries: number;
-    totalCurrywurst: number;
-    totalBratwurst: number;
-    totalSchaschlik: number;
-    totalLahmacun: number;
-    totalIncome: Float;
-    totalSoldProducts: number;
+    bills: Bill[] = [];
     day: number;
+    id_index: number = 0;
 
     constructor(day: number) {
-        this.totalFries = 0;
-        this.totalCurrywurst = 0;
-        this.totalBratwurst = 0;
-        this.totalSchaschlik = 0;
-        this.totalLahmacun = 0;
-        this.totalIncome = 0;
-        this.totalSoldProducts = 0;
         this.day = day;
+
+        this.bills = [];
 
         this.loadStats();
     }
 
-    async changeToDay(){
+    async changeToDay() {
         let str = await AsyncStorage.getItem('day');
         if (str)
             this.day = parseInt(str, 10);
-            console.log(this.day);
+        // console.log(this.day);
 
         this.loadStats();
     }
@@ -43,46 +35,131 @@ export default class Stats {
         let str = "stats" + this.day;
         const statsString = await AsyncStorage.getItem(str);
         if (statsString) {
-            console.log("loading: " + statsString);
+            // console.log("loading: " + statsString);
             const stats = JSON.parse(statsString);
-            this.totalFries = stats.totalFries;
-            this.totalCurrywurst = stats.totalCurrywurst;
-            this.totalBratwurst = stats.totalBratwurst;
-            this.totalSchaschlik = stats.totalSchaschlik;
-            this.totalLahmacun = stats.totalLahmacun;
-            this.totalIncome = stats.totalIncome;
-            this.totalSoldProducts = stats.totalSoldProducts;
+            this.day = stats.day;
+
+            this.bills = stats.bills;
+            // console.log("🚀 ~ Stats ~ loadStats ~ this.bills:", this.bills)
+            // for (const tmpBill of billList) {
+            //     this.bills.push(new Bill(tmpBill.name, tmpBill.price));
+            // }
+
         } else {
-            this.totalFries = 0;
-            this.totalCurrywurst = 0;
-            this.totalBratwurst = 0;
-            this.totalSchaschlik = 0;
-            this.totalLahmacun = 0;
-            this.totalIncome = 0;
-            this.totalSoldProducts = 0;
+            this.bills = [];
         }
     }
 
-    updateStats(bill: Bill) {
-        this.totalFries += bill.getFries();
-        this.totalCurrywurst += bill.getCurrywurst();
-        this.totalBratwurst += bill.getBratwurst();
-        this.totalSchaschlik += bill.getSchaschlik();
-        this.totalLahmacun += bill.getLahmacun();
-        this.totalIncome += bill.calculatePrice();
-        this.totalSoldProducts = this.totalFries + this.totalCurrywurst + this.totalSchaschlik + this.totalLahmacun + this.totalBratwurst;
+    deleteBill(bill: Bill) {
+        if (this.bills == undefined)
+            this.bills = []
 
+        this.bills = this.bills.filter((b) => {
+            return b != bill;
+        })
+    }
+
+    updateStats(bill: Bill) {
+        let tmpBill = new Bill(this.id_index);
+        this.id_index++;
+
+        let isFilled = false;
+        for (let prodName in bill.products) {
+            let amount = bill.products[prodName];
+            let product = productList.getProduct(prodName);
+
+            if (product === undefined)
+                continue;
+
+            tmpBill.addProduct(product, amount);
+            isFilled = true;
+        }
+
+        if (!isFilled)
+            return;
+
+        tmpBill.datetime = new Date().toLocaleString();
+        tmpBill.calculatePrice();
+        // console.log("🚀 ~ Stats ~ updateStats ~ tmpBill:", tmpBill)
+        if (this.bills == undefined)
+            this.bills = [];
+        this.bills.push(tmpBill);
+        // console.log("🚀 ~ Stats ~ updateStats ~ bills:", this.bills)
         saveStats(this);
     }
 
+    getTotal() {
+        if (this.bills == undefined)
+            this.bills = []
+
+        let total: Float = 0;
+        this.bills.forEach((bill) => {
+            for (let name in bill.products) {
+                let amount = bill.products[name];
+                // Use `key` and `value`
+
+                let tmpProd = productList.getProduct(name);
+                if (tmpProd === undefined)
+                    continue;
+
+                total += tmpProd.getPrice() * amount;
+            }
+        });
+
+        return total;
+    }
+
+    getTotalAmount() {
+        if (this.bills == undefined)
+            this.bills = []
+
+        let total: number = 0;
+        this.bills.forEach((bill) => {
+            for (let name in bill.products) {
+                let amount = bill.products[name];
+                // Use `key` and `value`
+
+                total += amount;
+            }
+        });
+
+        return total;
+    }
+
+    
+    getProductAmount(name: string) {
+        let total: number = 0;
+
+        if (this.bills == undefined)
+            this.bills = []
+
+        this.bills.forEach((bill) => {
+            if (isNaN(bill.products[name]))
+                return;
+            total += bill.products[name];
+        });
+
+        return total;
+    }
+
+    getTotalFromProduct(name: string) {
+        if (this.bills == undefined)
+            this.bills = []
+
+        let total: Float = 0;
+
+        this.bills.forEach((bill) => {
+            if (isNaN(bill.products[name]))
+                return;
+            total += bill.products[name] * productList.getPrice(name);
+            // total += productList.getPrice(name);
+        });
+
+        return total;
+    }
+
     reset() {
-        this.totalFries = 0;
-        this.totalCurrywurst = 0;
-        this.totalBratwurst = 0;
-        this.totalSchaschlik = 0;
-        this.totalLahmacun = 0;
-        this.totalIncome = 0;
-        this.totalSoldProducts = 0;
+        this.bills = [];
 
         saveStats(this);
     }

@@ -3,20 +3,13 @@ import { Pressable, StyleSheet, View, ViewBase, Alert } from 'react-native';
 
 import { ScrollView } from 'react-native';
 import PieChart from 'react-native-pie-chart';
-import { useState } from 'react';
-import { stats } from '../globals';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useEffect, useState } from 'react';
+import { productList, stats } from '../globals';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Button, Dialog, PaperProvider, Portal } from 'react-native-paper';
+import { router, useFocusEffect } from 'expo-router';
 
 export default function TabTwoScreen() {
-  const [totalIncome, setTotalIncome] = useState(stats.totalIncome)
-  const [totalFries, setTotalFries] = useState(stats.totalFries)
-  const [totalBratwurst, setTotalBratwurst] = useState(stats.totalBratwurst)
-  const [totalCurrywurst, setTotalCurrywurst] = useState(stats.totalCurrywurst)
-  const [totalSchaschlik, setTotalSchaschlik] = useState(stats.totalSchaschlik)
-  const [totalLahmacun, setTotalLahmacun] = useState(stats.totalLahmacun)
-  const [totalSoldProducts, setTotalSoldProducts] = useState(stats.totalSoldProducts)
   const [dummy, setDummy] = useState(1)
 
   const [day1Button, setDay1Button] = useState(stats.day == 1 ? '#307B30' : '#007BFF')
@@ -27,37 +20,46 @@ export default function TabTwoScreen() {
   const showDialog = () => setVisible(true);
   const hideDialog = () => setVisible(false);
 
-  const createTwoButtonAlert = () =>
-    Alert.alert('Alert Title', 'My Alert Msg', [
-      {
-        text: 'Cancel',
-        onPress: () => console.log('Cancel Pressed'),
-        style: 'cancel',
-      },
-      { text: 'OK', onPress: () => console.log('OK Pressed') },
-    ]);
-
   const widthAndHeight = 200
-  const series = [dummy, totalFries, totalBratwurst, totalCurrywurst, totalSchaschlik, totalLahmacun]
-  const sliceColor = ['#303030', '#fbd203', '#ffb300', '#ff9100', '#ff6c00', '#ff3c00']
+  const series = [dummy]
+  productList.getAll().forEach(product => {
+    series.push(stats.getProductAmount(product.getName()));
+  });
 
-  const interval = setInterval(() => {
-    if (stats.totalFries + stats.totalBratwurst + stats.totalCurrywurst + stats.totalSchaschlik + stats.totalLahmacun == 0) {
-      setDummy(1);
-    }
+  const sliceColorDatabase = ['#303030', '#ec7063', '#a569bd', '#5dade2', '#45b39d', '#58d68d', '#f5b041', '#dc7633', '#922b21', '#76448a', '#1f618d', '#148f77', '#1e8449', '#b7950b', '#af601a'];
+  const sliceColor: string[] = []
+  series.forEach((value, index) => {
+    sliceColor.push(sliceColorDatabase[index % sliceColorDatabase.length])
+  });
 
-    setTotalFries(stats.totalFries);
-    setTotalBratwurst(stats.totalBratwurst);
-    setTotalCurrywurst(stats.totalCurrywurst);
-    setTotalSchaschlik(stats.totalSchaschlik);
-    setTotalLahmacun(stats.totalLahmacun);
-    setTotalIncome(stats.totalIncome);
-    setTotalSoldProducts(stats.totalSoldProducts);
+  const updatePage = () => {
+    setTimeout(() => {
+      // console.log("update!");
+      if (stats.getTotalAmount() == 0) {
+        setDummy(1)
+      } else {
+        setDummy(0)
+      }
 
-    if (stats.totalFries + stats.totalBratwurst + stats.totalCurrywurst + stats.totalSchaschlik + stats.totalLahmacun > 0) {
-      setDummy(0);
-    }
-  }, 2000);
+      router.navigate('/explore');
+    }, 50);
+    return;
+  };
+
+  useFocusEffect(
+    React.useCallback(() => {
+      updatePage();
+      // Do something when the screen is focused
+      return () => {
+        // Do something when the screen is unfocused
+        // Useful for cleanup functions
+      };
+    }, [])
+  );
+
+  // useEffect(() => {
+  //   updatePage();
+  // }, [day1Button, day2Button, day3Button]);
 
   return (
     <PaperProvider>
@@ -72,6 +74,7 @@ export default function TabTwoScreen() {
                 setDay3Button('#007BFF');
                 await AsyncStorage.setItem('day', '1');
                 stats.changeToDay();
+                updatePage();
               }}>
               <ThemedText>Tag 1</ThemedText>
             </Pressable>
@@ -84,6 +87,7 @@ export default function TabTwoScreen() {
                 setDay3Button('#007BFF');
                 await AsyncStorage.setItem('day', '2');
                 stats.changeToDay();
+                updatePage();
               }}>
               <ThemedText>Tag 2</ThemedText>
             </Pressable>
@@ -96,6 +100,7 @@ export default function TabTwoScreen() {
                 setDay1Button('#007BFF');
                 await AsyncStorage.setItem('day', '3');
                 stats.changeToDay();
+                updatePage();
               }}>
               <ThemedText>Tag 3</ThemedText>
             </Pressable>
@@ -110,19 +115,15 @@ export default function TabTwoScreen() {
           <View style={styles.vertical}>
             <View style={styles.halfDisplay}>
               <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>Total eingenommen:</ThemedText>
-              <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>Pommes:</ThemedText>
-              <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>Bratwurst:</ThemedText>
-              <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>Currywurst:</ThemedText>
-              <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>Schaschlik:</ThemedText>
-              <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>Lahmacun:</ThemedText>
+              {productList.getAll().map(product => {
+                return <ThemedText type="subtitle" style={{ alignSelf: 'flex-end' }}>{product.getName()}:</ThemedText>
+              })}
             </View>
             <View style={styles.halfDisplay}>
-              <ThemedText type="subtitle" style={styles.middle}>{totalIncome}€</ThemedText>
-              <ThemedText type="subtitle" style={styles.middle}>{totalFries}x</ThemedText>
-              <ThemedText type="subtitle" style={styles.middle}>{totalBratwurst}x</ThemedText>
-              <ThemedText type="subtitle" style={styles.middle}>{totalCurrywurst}x</ThemedText>
-              <ThemedText type="subtitle" style={styles.middle}>{totalSchaschlik}x</ThemedText>
-              <ThemedText type="subtitle" style={styles.middle}>{totalLahmacun}x</ThemedText>
+              <ThemedText type="subtitle" style={styles.middle}>{stats.getTotal()}€</ThemedText>
+              {productList.getAll().map(product => {
+                return <ThemedText type="subtitle" style={styles.middle}>{stats.getProductAmount(product.getName())}</ThemedText>
+              })}
             </View>
           </View>
 
@@ -130,22 +131,41 @@ export default function TabTwoScreen() {
           <View style={styles.vertical2}>
             <PieChart style={styles.middle} widthAndHeight={widthAndHeight} series={series} sliceColor={sliceColor} />
             <View style={styles.middle}>
-              <ThemedText style={{ color: sliceColor[1], marginLeft: 30 }}>Pommes {(totalFries * 100 / totalSoldProducts).toFixed(2)}%</ThemedText>
-              <ThemedText style={{ color: sliceColor[2], marginLeft: 30 }}>Bratwurst {(totalBratwurst * 100 / totalSoldProducts).toFixed(2)}%</ThemedText>
-              <ThemedText style={{ color: sliceColor[3], marginLeft: 30 }}>Currywurst {(totalCurrywurst * 100 / totalSoldProducts).toFixed(2)}%</ThemedText>
-              <ThemedText style={{ color: sliceColor[4], marginLeft: 30 }}>Schaschlik {(totalSchaschlik * 100 / totalSoldProducts).toFixed(2)}%</ThemedText>
-              <ThemedText style={{ color: sliceColor[5], marginLeft: 30 }}>Lahmacun {(totalLahmacun * 100 / totalSoldProducts).toFixed(2)}%</ThemedText>
+              {productList.getAll().map((product, index) => {
+                return <ThemedText style={{ color: sliceColor[index + 1], marginLeft: 30 }}>{product.getName()} {(stats.getProductAmount(product.getName()) * 100 / stats.getTotalAmount()).toFixed(2)}%</ThemedText>
+              })}
             </View>
           </View>
 
-          <Pressable style={styles.buttonRed}
-            onLongPress={() => {
-              createTwoButtonAlert
-              showDialog();
-              // stats.reset();
-            }}>
-            <ThemedText style={styles.middle}>Tag zurücksetzen</ThemedText>
-          </Pressable>
+          <View style={{ alignSelf: 'center', justifyContent: 'center', flexDirection: 'row', width: '100%', height: '10%' , marginTop: 50, backgroundColor: '#808080' }}>
+            <View style={{  }}>
+              <Pressable
+                onLongPress={() => {
+                  router.navigate('/buttonView');
+                }}>
+                <ThemedText style={styles.middle}>Buttons</ThemedText>
+              </Pressable>
+            </View>
+
+            <View style={{ marginHorizontal: '20' }}>
+              <Pressable
+                onPress={() => {
+                  router.navigate('/historyView');
+                }}>
+                <ThemedText style={styles.middle}>Bill History</ThemedText>
+              </Pressable>
+            </View>
+            <View style={{ height: '100%', marginVertical: 'auto' }}>
+              <Pressable style={styles.buttonRed}
+                onLongPress={() => {
+                  showDialog();
+                  // stats.reset();
+                }}>
+                <ThemedText style={styles.middle}>Tag zurücksetzen</ThemedText>
+              </Pressable>
+            </View>
+          </View>
+
         </ScrollView>
 
       </View >
@@ -159,27 +179,30 @@ export default function TabTwoScreen() {
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={() => {
+              setDummy(1);
               stats.reset();
               hideDialog();
+              updatePage();
             }}>Ja</Button>
             <Button onPress={hideDialog}>Nein</Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>
-    </PaperProvider>
+    </PaperProvider >
   );
 }
 
 const styles = StyleSheet.create({
   buttonRed: {
     backgroundColor: '#FF0000',
-    alignSelf: 'center',
-    justifyContent: 'center',
-    width: '30%',
-    height: '7%',
+    // alignSelf: 'center',
+    // justifyContent: 'center',
+    // width: '30%',
+    // height: '7%',
     borderRadius: 10,
-    marginTop: 50,
-    bottom: -150
+    height: '100%',
+    // marginTop: 50,
+    // bottom: -150
   },
   topButtonsView: {
     alignSelf: 'center',
