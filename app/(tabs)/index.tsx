@@ -1,10 +1,10 @@
-import { Image, StyleSheet, View, Pressable } from 'react-native';
+import { Image, StyleSheet, View, Pressable, ImageSourcePropType } from 'react-native';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ScrollView } from 'react-native';
 import Bill from '../bill';
 import { useState } from 'react';
-import { productList, stats } from '../globals';
+import { BLUE_COLOR, productList, RED_COLOR, stats } from '../globals';
 import { Button, Dialog, PaperProvider, Portal } from 'react-native-paper';
 import { router, useFocusEffect } from 'expo-router';
 import React from 'react';
@@ -20,6 +20,9 @@ export default function HomeScreen() {
 
   const [buttonInView, setButtonInView] = useState([] as React.JSX.Element[]);
 
+  type Props = {
+    imgSource: ImageSourcePropType;
+  };
 
   const updateButtonFrontEnd = () => {
     // console.log("updateButtonFrontEnd");
@@ -30,18 +33,8 @@ export default function HomeScreen() {
 
       if (productList.getAll().length >= i + 2) {
         for (let j = 0; j < 2; j++) {
-          var req = require("./../../assets/images/adaptive-icon.png");
-          if (productList.getAll()[i + j].name.toLowerCase() == 'pommes') {
-            req = require("./../../assets/images/pommes.jpg");
-          } else if (productList.getAll()[i + j].name.toLowerCase() == 'schaschlik') {
-            req = require("./../../assets/images/schaschlik.jpg");
-          } else if (productList.getAll()[i + j].name.toLowerCase() == 'bratwurst') {
-            req = require("./../../assets/images/bratwurst.jpg");
-          } else if (productList.getAll()[i + j].name.toLowerCase() == 'currywurst') {
-            req = require("./../../assets/images/currywurst.jpg");
-          } else if (productList.getAll()[i + j].name.toLowerCase() == 'lahmacun') {
-            req = require("./../../assets/images/lahmacun.jpg");
-          }
+
+          const req = productList.getAll()[i + j].getPicture() ? {uri: productList.getAll()[i + j].getPicture()} : require("./../../assets/images/adaptive-icon.png");
 
           image1.push(<Image
             style={styles.imageLikeButton}
@@ -80,19 +73,8 @@ export default function HomeScreen() {
           </View>
         );
       } else {
-        var req = require("./../../assets/images/adaptive-icon.png");
-        if (productList.getAll()[i].name.toLowerCase() == 'pommes') {
-          req = require("./../../assets/images/pommes.jpg");
-        } else if (productList.getAll()[i].name.toLowerCase() == 'schaschlik') {
-          req = require("./../../assets/images/schaschlik.jpg");
-        } else if (productList.getAll()[i].name.toLowerCase() == 'bratwurst') {
-          req = require("./../../assets/images/bratwurst.jpg");
-        } else if (productList.getAll()[i].name.toLowerCase() == 'currywurst') {
-          req = require("./../../assets/images/currywurst.jpg");
-        } else if (productList.getAll()[i].name.toLowerCase() == 'lahmacun') {
-          req = require("./../../assets/images/lahmacun.jpg");
-        }
 
+        const req = productList.getAll()[i].getPicture() ? {uri: productList.getAll()[i].getPicture()} : require("./../../assets/images/adaptive-icon.png");
         image1.push(<Image
           style={styles.imageLikeButton}
           source={req} />)
@@ -122,6 +104,7 @@ export default function HomeScreen() {
 
   useFocusEffect(
     React.useCallback(() => {
+      productList.loadProductList();
       updateButtonFrontEnd();
       // Do something when the screen is focused
       return () => {
@@ -137,11 +120,20 @@ export default function HomeScreen() {
         <ThemedText type="title" style={styles.titleContainer}>Kasse</ThemedText>
         <View style={styles.vertical}>
           <ScrollView style={styles.wholeDisplay}>
-
             {buttonInView}
-
-
           </ScrollView>
+
+          <ThemedText style={{ position: 'absolute', left: 20, top: '66%', fontSize: 12 }}>
+            Hinweis:
+            {"\n"}
+            'Fertig' fügt die Bestellung in die Statistiken ein.
+            {"\n"}
+            'Löschen' nimmt die Bestellung nicht in die Statistik auf.
+            {"\n"}
+            Bitte auf den ausgewählten Tag in den Statistiken achten.
+            {"\n"}
+            Lange auf ein Produkt drücken entfernt eins aus der Bestellung.
+          </ThemedText>
 
 
           <View style={styles.rightSide}>
@@ -158,7 +150,7 @@ export default function HomeScreen() {
             </ScrollView>
 
 
-            <View style={{ position: 'relative', bottom: -10, backgroundColor: 'black' }}>
+            <View style={{ position: 'relative', bottom: -30, backgroundColor: 'black' }}>
               <Pressable style={styles.buttonBlue}
                 onPress={() => {
                   stats.updateStats(bill);
@@ -180,11 +172,11 @@ export default function HomeScreen() {
                 <ThemedText style={styles.middle}>Löschen</ThemedText>
               </Pressable>
 
-              <Pressable
-                onLongPress={() => {
+              <Pressable style={styles.buttonsbutton}
+                onPress={() => {
                   router.navigate('/buttonView');
                 }}>
-                <ThemedText style={styles.middle}>Buttons</ThemedText>
+                <ThemedText style={styles.middle}>Produkte</ThemedText>
               </Pressable>
 
               <ThemedText>
@@ -232,7 +224,7 @@ const styles = StyleSheet.create({
   },
   rightSide: {
     //backgroundColor: 'gray',
-    height: '75%',
+    height: '90%',
     width: '40%',
     marginRight: 5,
   },
@@ -333,7 +325,8 @@ const styles = StyleSheet.create({
     // fontSize: 25,
     fontWeight: 'bold',
     backgroundColor: '#FFFFFF',
-    alignSelf: 'center',
+    justifyContent: 'center',
+    // width: '50%',
     //shadowColor: '#FFFFFF',
     //shadowOffset: { width: 0, height: 0 },
     //shadowOpacity: 1,
@@ -353,7 +346,8 @@ const styles = StyleSheet.create({
   },
   billBackground: {
     backgroundColor: '#303030',
-    height: 10,
+    height: 100,
+    //bottom: -50,
     borderRadius: 10,
     // marginRight: 5,
     marginTop: 0,
@@ -361,20 +355,31 @@ const styles = StyleSheet.create({
     //width: '100%',
   },
   buttonRed: {
-    backgroundColor: '#e03434',//'#cc4545',
+    backgroundColor: RED_COLOR,//'#cc4545',
     alignSelf: 'center',
     //justifyContent: 'center',
     width: '70%',
-    height: '20%',
+    height: '15%',
     borderRadius: 10,
     marginTop: 10,
+    marginBottom: 10,
   },
   buttonBlue: {
-    backgroundColor: '#1f8bde',
+    backgroundColor: BLUE_COLOR,
     alignSelf: 'center',
     width: '70%',
-    height: '20%',
+    height: '15%',
     borderRadius: 10,
     marginBottom: 10,
+  },
+  buttonsbutton: {
+    backgroundColor: '#404040',
+    alignSelf: 'center',
+    width: '70%',
+    height: '10%',
+    borderRadius: 10,
+    marginBottom: 10,
+    marginTop: 30,
+    bottom: -30,
   }
 });

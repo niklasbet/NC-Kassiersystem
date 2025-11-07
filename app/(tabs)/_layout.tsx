@@ -6,16 +6,18 @@ import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { AntDesign, Entypo, FontAwesome6 } from '@expo/vector-icons';
 import { DarkTheme, useTheme } from '@react-navigation/native';
-import { BackHandler } from 'react-native';
+import { Appearance, BackHandler } from 'react-native';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
 
 //marvin war hierrrr
 
+Appearance.setColorScheme('dark');
+
   return (
     <Tabs
-      tabBarActiveTintColor='#202020'
+      tabBarActiveTintColor='#707070'
       screenOptions={{
         headerShown: false,
         tabBarStyle: {

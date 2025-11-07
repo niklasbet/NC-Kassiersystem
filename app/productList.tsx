@@ -15,7 +15,7 @@ export default class ProductList {
         this.loadProductList();
     }
 
-    addProduct(name: string, price: number) {
+    addProduct(name: string, price: number, image: string = '', stat: boolean = true) {
         if (name === "" || isNaN(price))
             return;
 
@@ -27,7 +27,10 @@ export default class ProductList {
             return;
         }
 
-        this.products.push(new Product(name, price, this.id_index));
+        let p = new Product(name, price, this.id_index);
+        p.setPicture(image);
+        p.stat = stat;
+        this.products.push(p);
         this.id_index++;
         this.save();
     }
@@ -72,7 +75,8 @@ export default class ProductList {
             const productList = JSON.parse(productListString).products;
 
             for (const product of productList) {
-                this.addProduct(product.name, product.price);
+                this.addProduct(product.name, product.price, product.picture, product.stat);
+
             }
 
             // console.log("loading:" + this.toString());

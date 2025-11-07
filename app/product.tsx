@@ -6,11 +6,23 @@ export default class Product {
     name: string;
     price: Float;
     id: number;
+    picture: string;
+    stat: boolean;
     
     constructor(name: string, price: Float, id: number) {
         this.name = name;
         this.price = price;
         this.id = id;
+        this.picture = '';
+        this.stat = true;
+    }
+
+    setPicture(picture: string) {
+        this.picture = picture;
+    }
+
+    getPicture(): string {
+        return this.picture;
     }
 
     setName(name: string) {

@@ -116,17 +116,20 @@ export default class Stats {
         let total: number = 0;
         this.bills.forEach((bill) => {
             for (let name in bill.products) {
-                let amount = bill.products[name];
-                // Use `key` and `value`
+                let p = productList.getProduct(name);
+                if (p && p.stat) {
+                    let amount = bill.products[name];
+                    // Use `key` and `value`
 
-                total += amount;
+                    total += amount;
+                }
             }
         });
 
         return total;
     }
 
-    
+
     getProductAmount(name: string) {
         let total: number = 0;
 

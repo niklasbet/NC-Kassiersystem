@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, View, ViewBase, Alert } from 'react-native';
 import { ScrollView } from 'react-native';
 import PieChart from 'react-native-pie-chart';
 import React, { useEffect, useState } from 'react';
-import { productList, stats } from '../globals';
+import { BLUE_COLOR, productList, RED_COLOR, stats } from '../globals';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Button, Dialog, PaperProvider, Portal } from 'react-native-paper';
 import { router, useFocusEffect } from 'expo-router';
@@ -12,18 +12,20 @@ import { router, useFocusEffect } from 'expo-router';
 export default function TabTwoScreen() {
   const [dummy, setDummy] = useState(1)
 
-  const [day1Button, setDay1Button] = useState(stats.day == 1 ? '#307B30' : '#007BFF')
-  const [day2Button, setDay2Button] = useState(stats.day == 2 ? '#307B30' : '#007BFF')
-  const [day3Button, setDay3Button] = useState(stats.day == 3 ? '#307B30' : '#007BFF')
+  const [day1Button, setDay1Button] = useState(stats.day == 1 ? BLUE_COLOR : '#404040')
+  const [day2Button, setDay2Button] = useState(stats.day == 2 ? BLUE_COLOR : '#404040')
+  const [day3Button, setDay3Button] = useState(stats.day == 3 ? BLUE_COLOR : '#404040')
 
   const [visible, setVisible] = useState(false);
   const showDialog = () => setVisible(true);
   const hideDialog = () => setVisible(false);
 
   const widthAndHeight = 200
-  const series = [dummy]
+  let series = [dummy]
   productList.getAll().forEach(product => {
-    series.push(stats.getProductAmount(product.getName()));
+    if (product.stat) {
+      series.push(stats.getProductAmount(product.getName()));
+    }
   });
 
   const sliceColorDatabase = ['#303030', '#ec7063', '#a569bd', '#5dade2', '#45b39d', '#58d68d', '#f5b041', '#dc7633', '#922b21', '#76448a', '#1f618d', '#148f77', '#1e8449', '#b7950b', '#af601a'];
@@ -35,7 +37,7 @@ export default function TabTwoScreen() {
   const updatePage = () => {
     setTimeout(() => {
       // console.log("update!");
-      if (stats.getTotalAmount() == 0) {
+      if (stats.getTotal() == 0) {
         setDummy(1)
       } else {
         setDummy(0)
@@ -51,6 +53,7 @@ export default function TabTwoScreen() {
       updatePage();
       // Do something when the screen is focused
       return () => {
+        setDummy(1)
         // Do something when the screen is unfocused
         // Useful for cleanup functions
       };
@@ -69,9 +72,9 @@ export default function TabTwoScreen() {
           <View style={styles.topButtonsView}>
             <Pressable style={{ alignSelf: 'center', alignItems: 'center', width: '70%', backgroundColor: day1Button, borderRadius: 5 }}
               onPress={async () => {
-                setDay1Button('#307B30');
-                setDay2Button('#007BFF');
-                setDay3Button('#007BFF');
+                setDay1Button(BLUE_COLOR);
+                setDay2Button('#404040');
+                setDay3Button('#404040');
                 await AsyncStorage.setItem('day', '1');
                 stats.changeToDay();
                 updatePage();
@@ -82,9 +85,9 @@ export default function TabTwoScreen() {
           <View style={styles.topButtonsView}>
             <Pressable style={{ alignSelf: 'center', alignItems: 'center', width: '70%', backgroundColor: day2Button, borderRadius: 5 }}
               onPress={async () => {
-                setDay2Button('#307B30');
-                setDay1Button('#007BFF');
-                setDay3Button('#007BFF');
+                setDay2Button(BLUE_COLOR);
+                setDay1Button('#404040');
+                setDay3Button('#404040');
                 await AsyncStorage.setItem('day', '2');
                 stats.changeToDay();
                 updatePage();
@@ -95,9 +98,9 @@ export default function TabTwoScreen() {
           <View style={styles.topButtonsView}>
             <Pressable style={{ alignSelf: 'center', alignItems: 'center', width: '70%', backgroundColor: day3Button, borderRadius: 5 }}
               onPress={async () => {
-                setDay3Button('#307B30');
-                setDay2Button('#007BFF');
-                setDay1Button('#007BFF');
+                setDay3Button(BLUE_COLOR);
+                setDay2Button('#404040');
+                setDay1Button('#404040');
                 await AsyncStorage.setItem('day', '3');
                 stats.changeToDay();
                 updatePage();
@@ -108,7 +111,7 @@ export default function TabTwoScreen() {
         </View>
 
 
-        <ScrollView>
+        <ScrollView style={{ height: '110%' }}>
           <ThemedText type="title" style={{ marginTop: -30 }}></ThemedText>
           <ThemedText type="title" style={styles.titleContainer}>Totale Verkäufe</ThemedText>
 
@@ -132,39 +135,41 @@ export default function TabTwoScreen() {
             <PieChart style={styles.middle} widthAndHeight={widthAndHeight} series={series} sliceColor={sliceColor} />
             <View style={styles.middle}>
               {productList.getAll().map((product, index) => {
-                return <ThemedText style={{ color: sliceColor[index + 1], marginLeft: 30 }}>{product.getName()} {(stats.getProductAmount(product.getName()) * 100 / stats.getTotalAmount()).toFixed(2)}%</ThemedText>
+                return product.stat ? <ThemedText style={{ color: sliceColor[index + 1], marginLeft: 30 }}>{product.getName()} {(stats.getProductAmount(product.getName()) * 100 / stats.getTotalAmount()).toFixed(2)}%</ThemedText> : null;
               })}
             </View>
           </View>
 
-          <View style={{ alignSelf: 'center', justifyContent: 'center', flexDirection: 'row', width: '100%', height: '10%' , marginTop: 50, backgroundColor: '#808080' }}>
-            <View style={{  }}>
-              <Pressable
-                onLongPress={() => {
+          <View style={{ alignSelf: 'center', justifyContent: 'center', flexDirection: 'row', width: '100%', height: '10%', marginTop: 50 }}>
+            <View style={{ height: '100%', marginVertical: 'auto' }}>
+              <Pressable style={styles.otherButtons}
+                onPress={() => {
                   router.navigate('/buttonView');
                 }}>
-                <ThemedText style={styles.middle}>Buttons</ThemedText>
+                <ThemedText style={styles.bottomButtons}>Produkte</ThemedText>
               </Pressable>
             </View>
 
-            <View style={{ marginHorizontal: '20' }}>
-              <Pressable
+            <View style={{ marginLeft: 50 }}>
+              <Pressable style={styles.otherButtons}
                 onPress={() => {
                   router.navigate('/historyView');
                 }}>
-                <ThemedText style={styles.middle}>Bill History</ThemedText>
+                <ThemedText style={styles.bottomButtons}>Bestellverlauf</ThemedText>
               </Pressable>
             </View>
-            <View style={{ height: '100%', marginVertical: 'auto' }}>
+            <View style={{ height: '100%', marginVertical: 'auto', marginLeft: 65 }}>
               <Pressable style={styles.buttonRed}
                 onLongPress={() => {
                   showDialog();
                   // stats.reset();
                 }}>
-                <ThemedText style={styles.middle}>Tag zurücksetzen</ThemedText>
+                <ThemedText style={styles.bottomButtons}>Tag zurücksetzen</ThemedText>
               </Pressable>
             </View>
           </View>
+
+          <ThemedText>{'\n\n\n\n'}</ThemedText>
 
         </ScrollView>
 
@@ -194,15 +199,28 @@ export default function TabTwoScreen() {
 
 const styles = StyleSheet.create({
   buttonRed: {
-    backgroundColor: '#FF0000',
+    backgroundColor: RED_COLOR,
     // alignSelf: 'center',
-    // justifyContent: 'center',
+    justifyContent: 'center',
     // width: '30%',
     // height: '7%',
     borderRadius: 10,
-    height: '100%',
+    height: '50%',
+    width: '140%',
     // marginTop: 50,
     // bottom: -150
+  },
+  otherButtons: {
+    backgroundColor: '#404040',
+    justifyContent: 'center',
+    borderRadius: 10,
+    height: '50%',
+    width: '140%',
+  },
+  bottomButtons: {
+    //height: '100%',
+    alignSelf: 'center',
+    //top: '25%',
   },
   topButtonsView: {
     alignSelf: 'center',
