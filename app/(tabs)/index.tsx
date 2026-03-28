@@ -1,385 +1,445 @@
-import { Image, StyleSheet, View, Pressable, ImageSourcePropType } from 'react-native';
+import { router } from 'expo-router';
+import { useMemo, useState } from 'react';
+import {
+  FlatList,
+  Image,
+  LayoutChangeEvent,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+} from 'react-native';
+import {
+  Button,
+  Card,
+  Divider,
+  Surface,
+  Text,
+  useTheme,
+} from 'react-native-paper';
 
-import { ThemedText } from '@/components/ThemedText';
-import { ScrollView } from 'react-native';
-import Bill from '../bill';
-import { useState } from 'react';
-import { BLUE_COLOR, productList, RED_COLOR, stats } from '../globals';
-import { Button, Dialog, PaperProvider, Portal } from 'react-native-paper';
-import { router, useFocusEffect } from 'expo-router';
-import React from 'react';
-
-let bill = new Bill(0);
+import { useAppData } from '@/app/store/AppDataContext';
+import type { BillItems, Product } from '@/app/store/types';
+import { palette } from '@/app/theme/appTheme';
+import { formatEuro } from '@/app/utils/format';
+import { ConfirmModal } from '@/components/ConfirmModal';
+import { getProductImageSource } from '@/app/utils/productImages';
 
 export default function HomeScreen() {
-  const [billText, setBillText] = useState(bill.toString());
-  const [visible, setVisible] = useState(false);
+  const theme = useTheme();
+  const { width } = useWindowDimensions();
+  const isCompactLayout = width < 760;
 
-  const showDialog = () => setVisible(true);
-  const hideDialog = () => setVisible(false);
+  const { products, addBill, selectedDay } = useAppData();
 
-  const [buttonInView, setButtonInView] = useState([] as React.JSX.Element[]);
+  const [draft, setDraft] = useState<BillItems>({});
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false);
+  const [catalogWidth, setCatalogWidth] = useState(0);
 
-  type Props = {
-    imgSource: ImageSourcePropType;
-  };
-
-  const updateButtonFrontEnd = () => {
-    // console.log("updateButtonFrontEnd");
-    let buttons = [];
-
-    for (let i = 0; i < productList.getAll().length; i += 2) {
-      let image1: React.JSX.Element[] = [];
-
-      if (productList.getAll().length >= i + 2) {
-        for (let j = 0; j < 2; j++) {
-
-          const req = productList.getAll()[i + j].getPicture() ? {uri: productList.getAll()[i + j].getPicture()} : require("./../../assets/images/adaptive-icon.png");
-
-          image1.push(<Image
-            style={styles.imageLikeButton}
-            source={req} />)
-        }
-
-        buttons.push(
-          <View style={styles.horizontal}>
-            <Pressable style={styles.button}
-              onPress={() => {
-                bill.addProduct(productList.getAll()[i], 1);
-                setBillText(bill.toString());
-              }}
-              onLongPress={() => {
-                bill.addProduct(productList.getAll()[i], -1);
-                setBillText(bill.toString());
-              }}>
-              {image1.at(0)}
-              <ThemedText style={styles.nameInImage}>{productList.getAll()[i].name}</ThemedText>
-              <ThemedText style={styles.textInImage}>{productList.getAll()[i].price}€</ThemedText>
-            </Pressable>
-
-            <Pressable style={styles.button}
-              onPress={() => {
-                bill.addProduct(productList.getAll()[i + 1], 1);
-                setBillText(bill.toString());
-              }}
-              onLongPress={() => {
-                bill.addProduct(productList.getAll()[i + 1], -1);
-                setBillText(bill.toString());
-              }}>
-              {image1.at(1)}
-              <ThemedText style={styles.nameInImage}>{productList.getAll()[i + 1].name}</ThemedText>
-              <ThemedText style={styles.textInImage}>{productList.getAll()[i + 1].price}€</ThemedText>
-            </Pressable>
-          </View>
-        );
-      } else {
-
-        const req = productList.getAll()[i].getPicture() ? {uri: productList.getAll()[i].getPicture()} : require("./../../assets/images/adaptive-icon.png");
-        image1.push(<Image
-          style={styles.imageLikeButton}
-          source={req} />)
-
-        buttons.push(
-          <View style={styles.horizontal}>
-            <Pressable style={styles.button}
-              onPress={() => {
-                bill.addProduct(productList.getAll()[i], 1);
-                setBillText(bill.toString());
-              }}
-              onLongPress={() => {
-                bill.addProduct(productList.getAll()[i], -1);
-                setBillText(bill.toString());
-              }}>
-              {image1.at(0)}
-              <ThemedText style={styles.nameInImage}>{productList.getAll()[i].name}</ThemedText>
-              <ThemedText style={styles.textInImage}>{productList.getAll()[i].price}€</ThemedText>
-            </Pressable>
-          </View>
-        );
-      }
-
-    }
-    setButtonInView(buttons);
-  };
-
-  useFocusEffect(
-    React.useCallback(() => {
-      productList.loadProductList();
-      updateButtonFrontEnd();
-      // Do something when the screen is focused
-      return () => {
-        // Do something when the screen is unfocused
-        // Useful for cleanup functions
-      };
-    }, [])
+  const visibleProducts = useMemo(
+    () =>
+      products
+        .filter((product) => product.availableDays.includes(selectedDay))
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [products, selectedDay],
   );
 
+  const gridColumns = useMemo(() => {
+    const effectiveWidth = catalogWidth || width * 0.58;
+    if (effectiveWidth > 900) {
+      return 4;
+    }
+    if (effectiveWidth > 620) {
+      return 3;
+    }
+    if (effectiveWidth > 430) {
+      return 2;
+    }
+    return 1;
+  }, [catalogWidth, width]);
+
+  const cardGap = 12;
+  const cardWidth = useMemo(() => {
+    if (gridColumns === 1) {
+      return undefined;
+    }
+    const effectiveWidth = catalogWidth || width * 0.58;
+    return Math.max(140, (effectiveWidth - cardGap * (gridColumns - 1)) / gridColumns);
+  }, [catalogWidth, gridColumns, width]);
+
+  const compactCard = gridColumns >= 3;
+  const ultraCompactCard = gridColumns >= 4;
+
+  const total = useMemo(
+    () =>
+      visibleProducts.reduce((sum, product) => {
+        const amount = draft[product.id] ?? 0;
+        return sum + amount * product.price;
+      }, 0),
+    [draft, visibleProducts],
+  );
+
+  const orderLines = useMemo(
+    () =>
+      visibleProducts
+        .map((product) => ({ product, amount: draft[product.id] ?? 0 }))
+        .filter((entry) => entry.amount > 0),
+    [draft, visibleProducts],
+  );
+
+  const changeAmount = (product: Product, delta: number) => {
+    setDraft((prev) => {
+      const current = prev[product.id] ?? 0;
+      const next = Math.max(0, current + delta);
+      return { ...prev, [product.id]: next };
+    });
+  };
+
+  const completeOrder = async () => {
+    await addBill(draft);
+    setDraft({});
+  };
+
+  const clearOrder = () => {
+    setDraft({});
+    setConfirmClearOpen(false);
+  };
+
+  const onCatalogLayout = (event: LayoutChangeEvent) => {
+    setCatalogWidth(event.nativeEvent.layout.width);
+  };
+
   return (
-    <PaperProvider>
-      <View style={{ backgroundColor: '#000000' }}>
-        <ThemedText type="title" style={styles.titleContainer}>Kasse</ThemedText>
-        <View style={styles.vertical}>
-          <ScrollView style={styles.wholeDisplay}>
-            {buttonInView}
-          </ScrollView>
+    <View style={[styles.screen, { backgroundColor: theme.colors.background }]}>
+      <View style={styles.glowTop} />
+      <View style={styles.headerRow}>
+        <View>
+          <Text variant="headlineMedium" style={styles.title}>
+            Kassensystem
+          </Text>
+        </View>
+        <Button mode="contained-tonal" onPress={() => router.push('/buttonView')}>
+          Produkte verwalten
+        </Button>
+      </View>
 
-          <ThemedText style={{ position: 'absolute', left: 20, top: '66%', fontSize: 12 }}>
-            Hinweis:
-            {"\n"}
-            'Fertig' fügt die Bestellung in die Statistiken ein.
-            {"\n"}
-            'Löschen' nimmt die Bestellung nicht in die Statistik auf.
-            {"\n"}
-            Bitte auf den ausgewählten Tag in den Statistiken achten.
-            {"\n"}
-            Lange auf ein Produkt drücken entfernt eins aus der Bestellung.
-          </ThemedText>
-
-
-          <View style={styles.rightSide}>
-            <ThemedText style={styles.titleTwoContainer}>
-              Total
-            </ThemedText>
-
-
-            <ScrollView style={styles.billBackground}>
-              <ThemedText></ThemedText>
-              <ThemedText style={{ left: 15 }}>
-                {billText}
-              </ThemedText>
-            </ScrollView>
-
-
-            <View style={{ position: 'relative', bottom: -30, backgroundColor: 'black' }}>
-              <Pressable style={styles.buttonBlue}
-                onPress={() => {
-                  stats.updateStats(bill);
-
-                  bill.reset();
-                  setBillText(bill.toString());
-                  // console.log(stats);
-                }}>
-                <ThemedText style={styles.middle}>Fertig</ThemedText>
+      <View style={[styles.mainArea, isCompactLayout && styles.mainAreaCompact]}>
+        <View
+          style={[styles.catalogColumn, isCompactLayout && styles.catalogColumnCompact]}
+          onLayout={onCatalogLayout}
+        >
+          <FlatList
+            data={visibleProducts}
+            keyExtractor={(item) => item.id.toString()}
+            numColumns={gridColumns}
+            key={`grid-${gridColumns}`}
+            contentContainerStyle={styles.catalogContent}
+            columnWrapperStyle={gridColumns === 1 ? undefined : styles.catalogRow}
+            renderItem={({ item }) => (
+              <Pressable
+                style={[
+                  styles.productPressable,
+                  gridColumns === 1 ? styles.productPressableCompact : styles.productPressableGrid,
+                  cardWidth ? { width: cardWidth } : undefined,
+                ]}
+                onPress={() => changeAmount(item, 1)}
+              >
+                <Card style={[styles.productCard, ultraCompactCard && styles.productCardUltraCompact, { backgroundColor: theme.colors.surface }]}>
+                  <Card.Content>
+                    <View style={styles.imageWrap}>
+                      <Image
+                        source={getProductImageSource(item)}
+                        style={[
+                          styles.image,
+                          ultraCompactCard
+                            ? styles.imageUltraCompact
+                            : compactCard
+                              ? styles.imageCompact
+                              : styles.imageRegular,
+                        ]}
+                      />
+                    </View>
+                    <Text numberOfLines={1} variant={ultraCompactCard ? 'titleSmall' : 'titleMedium'} style={styles.productName}>
+                      {item.name}
+                    </Text>
+                    <View style={styles.priceRow}>
+                      <Text variant={ultraCompactCard ? 'titleSmall' : 'titleMedium'} style={{ color: theme.colors.primary }}>
+                        {formatEuro(item.price)}
+                      </Text>
+                      <View style={styles.amountControls}>
+                        <Button
+                          compact
+                          mode="contained-tonal"
+                          onPress={() => changeAmount(item, -1)}
+                          style={styles.minusButton}
+                        >
+                          -
+                        </Button>
+                        <Surface style={[styles.amountBadge, { backgroundColor: theme.colors.surfaceVariant }]}>
+                          <Text variant="labelLarge">{draft[item.id] ?? 0}</Text>
+                        </Surface>
+                      </View>
+                    </View>
+                  </Card.Content>
+                </Card>
               </Pressable>
-              {/* <ThemedText>
-              {""}
-            </ThemedText> */}
-              <Pressable style={styles.buttonRed}
-                onLongPress={() => {
-                  showDialog();
-                  console.log("Delete");
-                }}>
-                <ThemedText style={styles.middle}>Löschen</ThemedText>
-              </Pressable>
-
-              <Pressable style={styles.buttonsbutton}
-                onPress={() => {
-                  router.navigate('/buttonView');
-                }}>
-                <ThemedText style={styles.middle}>Produkte</ThemedText>
-              </Pressable>
-
-              <ThemedText>
-                {""}
-              </ThemedText>
-
-            </View>
-
-          </View>
-
+            )}
+            ListEmptyComponent={
+              <Surface style={[styles.emptyState, { backgroundColor: theme.colors.surfaceVariant }]}> 
+                <Text variant="titleMedium">Keine Produkte für Tag {selectedDay}</Text>
+                <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+                  Passe Tage in „Produkte verwalten“ an oder lege ein neues Produkt an.
+                </Text>
+              </Surface>
+            }
+          />
         </View>
 
-        <Portal>
-          <Dialog visible={visible} onDismiss={hideDialog}>
-            <Dialog.Title>Warnung</Dialog.Title>
-            <Dialog.Content>
-              <ThemedText>Wirklich löschen?</ThemedText>
-              <ThemedText>Die Bestellung wird nicht in die Statistik aufgenommen.</ThemedText>
-            </Dialog.Content>
-            <Dialog.Actions>
-              <Button onPress={() => {
-                bill.reset();
-                setBillText(bill.toString());
-                hideDialog();
-              }}>Ja</Button>
-              <Button onPress={hideDialog}>Nein</Button>
-            </Dialog.Actions>
-          </Dialog>
-        </Portal>
+        <Surface style={[styles.sidePanel, isCompactLayout && styles.sidePanelCompact, { backgroundColor: theme.colors.surface }]}> 
+          <Text variant="titleLarge">Aktuelle Bestellung</Text>
+          <Divider style={styles.divider} />
+
+          <View style={styles.orderLines}>
+            {orderLines.length === 0 ? (
+              <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+                Keine Artikel ausgewählt.
+              </Text>
+            ) : (
+              <ScrollView contentContainerStyle={styles.orderListContent} showsVerticalScrollIndicator={false}>
+                {orderLines.map(({ product, amount }) => (
+                  <Surface key={product.id} style={[styles.orderItemCard, { backgroundColor: theme.colors.surfaceVariant }]}>
+                    <View style={styles.orderRowTop}>
+                      <Surface style={[styles.qtyBadge, { backgroundColor: theme.colors.primary }]}>
+                        <Text variant="labelMedium" style={{ color: theme.colors.onPrimary }}>
+                          {amount}
+                        </Text>
+                      </Surface>
+                      <Text variant="titleSmall" style={styles.orderProductName} numberOfLines={2}>
+                        {product.name}
+                      </Text>
+                      <Text variant="titleSmall" style={styles.orderLineTotal}>
+                        {formatEuro(amount * product.price)}
+                      </Text>
+                    </View>
+                    <View style={styles.orderRowBottom}>
+                      <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                        Einzelpreis
+                      </Text>
+                      <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                        {formatEuro(product.price)}
+                      </Text>
+                    </View>
+                  </Surface>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+
+          <Divider style={styles.divider} />
+          <View style={styles.totalRow}>
+            <Text variant="titleMedium">Gesamt</Text>
+            <Text variant="headlineSmall" style={{ color: theme.colors.primary }}>
+              {formatEuro(total)}
+            </Text>
+          </View>
+
+          <Button mode="contained" onPress={completeOrder} disabled={orderLines.length === 0}>
+            Bestellung abschließen
+          </Button>
+          <Button
+            mode="contained-tonal"
+            buttonColor={palette.danger}
+            onPress={() => setConfirmClearOpen(true)}
+            textColor="#2d0c0c"
+            style={styles.actionSpacing}
+            disabled={orderLines.length === 0}
+          >
+            Bestellung leeren
+          </Button>
+        </Surface>
       </View>
-    </PaperProvider>
+
+      <ConfirmModal
+        visible={confirmClearOpen}
+        title="Bestellung verwerfen?"
+        message="Die aktuelle Auswahl wird gelöscht und nicht in die Statistik übernommen."
+        confirmLabel="Löschen"
+        tone="danger"
+        onCancel={() => setConfirmClearOpen(false)}
+        onConfirm={clearOrder}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  middle: {
-    alignSelf: 'center',
-    marginVertical: 'auto',
+  screen: {
+    flex: 1,
+    paddingTop: 44,
+    paddingHorizontal: 20,
   },
-  wholeDisplay: {
-    marginTop: 70,
-    // backgroundColor: 'lightgray',
-    height: '60%',
-    width: '50%',
+  glowTop: {
+    position: 'absolute',
+    top: -120,
+    right: -50,
+    width: 280,
+    height: 280,
+    borderRadius: 999,
+    backgroundColor: 'rgba(246, 179, 81, 0.14)',
   },
-  rightSide: {
-    //backgroundColor: 'gray',
-    height: '90%',
-    width: '40%',
-    marginRight: 5,
-  },
-  titleContainer: {
-    marginTop: 60,
-    marginBottom: 30,
+  headerRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    alignSelf: 'center',
-    gap: 8,
+    marginBottom: 10,
+    gap: 12,
   },
-  titleTwoContainer: {
-    marginTop: 80,
-    marginBottom: -20,
-    fontWeight: 'bold',
+  title: {
+    fontWeight: '700',
+  },
+  mainArea: {
+    flex: 1,
     flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'center',
-    alignContent: 'center',
-    textAlign: 'center',
-    textAlignVertical: 'center',
-    gap: 8,
-    zIndex: 5,
-    backgroundColor: '#202020',
-    borderRadius: 10,
-    width: '100%',
-    height: '5%',
+    gap: 16,
   },
-  stepContainer: {
+  mainAreaCompact: {
+    flexDirection: 'column',
+  },
+  catalogColumn: {
+    flex: 1.3,
+  },
+  catalogColumnCompact: {
+    flex: 1,
+  },
+  catalogContent: {
+    paddingBottom: 8,
     gap: 8,
+  },
+  catalogRow: {
+    gap: 8,
+  },
+  productPressable: {
     marginBottom: 8,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  productPressableGrid: {
+    width: '48.5%',
   },
-  horizontal: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
-  vertical: {
-    flexDirection: 'row',
-    //justifyContent: 'center',
-    height: '100%',
+  productPressableCompact: {
     width: '100%',
-    // backgroundColor: 'gray',
   },
-  button: {
-    padding: 15,
+  productCard: {
+    borderRadius: 16,
+  },
+  productCardUltraCompact: {
     borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    marginHorizontal: 15,
-    marginTop: 30,
-    width: '40%',
-    height: 120,
-    marginBottom: 10,
-    backgroundColor: '#202020',
-    //shadowColor: 'white',
-    //shadowOffset: { width: -4, height: 3 },
-    //shadowOpacity: 0.3,
-    //shadowRadius: 3,
   },
-  imageLikeButton: {
-    width: '130%',
-    height: '160%',
-    //resizeMode: 'contain',
-    borderRadius: 20,
-  },
-  textInImage: {
-    position: 'absolute',
-    color: '#000000',
-    bottom: 0,
-    right: 0,
-    fontSize: 25,
-    fontWeight: 'bold',
-    backgroundColor: '#FFFFFF',
-    alignSelf: 'center',
-    //shadowColor: '#FFFFFF',
-    //shadowOffset: { width: 0, height: 0 },
-    //shadowOpacity: 1,
-    //shadowRadius: 3,
-    paddingTop: 1,
-    height: 20,
-    //width: 60,
-    borderRadius: 5,
-    borderColor: '#FF0000',
-    //borderWidth: 1,
-  },
-  nameInImage: {
-    position: 'relative',
-    color: '#000000',
-    bottom: 80,
-    right: 'auto',
-    // fontSize: 25,
-    fontWeight: 'bold',
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    // width: '50%',
-    //shadowColor: '#FFFFFF',
-    //shadowOffset: { width: 0, height: 0 },
-    //shadowOpacity: 1,
-    //shadowRadius: 3,
-    paddingTop: 1,
-    height: 20,
-    //width: 60,
-    borderRadius: 5,
-    borderColor: '#FF0000',
-    //borderWidth: 1,
-  },
-  textBlue: {
-    color: "#007BFF",
-  },
-  textRed: {
-    color: "#FF0000",
-  },
-  billBackground: {
-    backgroundColor: '#303030',
-    height: 100,
-    //bottom: -50,
-    borderRadius: 10,
-    // marginRight: 5,
-    marginTop: 0,
+  imageWrap: {
+    borderRadius: 12,
+    overflow: 'hidden',
     marginBottom: 8,
-    //width: '100%',
   },
-  buttonRed: {
-    backgroundColor: RED_COLOR,//'#cc4545',
-    alignSelf: 'center',
-    //justifyContent: 'center',
-    width: '70%',
-    height: '15%',
-    borderRadius: 10,
-    marginTop: 10,
-    marginBottom: 10,
+  image: {
+    width: '100%',
+    resizeMode: 'cover',
   },
-  buttonBlue: {
-    backgroundColor: BLUE_COLOR,
-    alignSelf: 'center',
-    width: '70%',
-    height: '15%',
-    borderRadius: 10,
-    marginBottom: 10,
+  imageRegular: {
+    height: 112,
   },
-  buttonsbutton: {
-    backgroundColor: '#404040',
-    alignSelf: 'center',
-    width: '70%',
-    height: '10%',
-    borderRadius: 10,
-    marginBottom: 10,
-    marginTop: 30,
-    bottom: -30,
-  }
+  imageCompact: {
+    height: 84,
+  },
+  imageUltraCompact: {
+    height: 66,
+  },
+  productName: {
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  amountBadge: {
+    minWidth: 36,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    alignItems: 'center',
+  },
+  amountControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  minusButton: {
+    minWidth: 34,
+  },
+  sidePanel: {
+    flex: 0.85,
+    borderRadius: 18,
+    padding: 12,
+  },
+  sidePanelCompact: {
+    flex: 0,
+    marginTop: 6,
+    marginBottom: 6,
+  },
+  divider: {
+    marginVertical: 8,
+  },
+  orderLines: {
+    flex: 3.8,
+    minHeight: 520,
+  },
+  orderListContent: {
+    gap: 8,
+    paddingBottom: 4,
+  },
+  orderItemCard: {
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  orderRowTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  orderRowBottom: {
+    marginTop: 2,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  qtyBadge: {
+    minWidth: 24,
+    borderRadius: 999,
+    paddingHorizontal: 7,
+    paddingVertical: 1,
+    alignItems: 'center',
+  },
+  orderProductName: {
+    flex: 1,
+  },
+  orderLineTotal: {
+    flexShrink: 0,
+  },
+  totalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginBottom: 8,
+  },
+  actionSpacing: {
+    marginTop: 6,
+  },
+  emptyState: {
+    borderRadius: 16,
+    padding: 18,
+    alignItems: 'center',
+    gap: 6,
+  },
 });

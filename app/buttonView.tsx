@@ -1,193 +1,411 @@
-import { ThemedText } from "@/components/ThemedText";
-import { router } from "expo-router";
-import { Pressable, View } from "react-native";
-import { Button, DataTable, DefaultTheme, Dialog, PaperProvider, Portal, TextInput } from "react-native-paper";
-import { StyleSheet } from 'react-native';
-import { useEffect, useState } from "react";
-import { productList } from "./globals";
-import { DarkTheme, ThemeProvider } from "@react-navigation/native";
 import * as ImagePicker from 'expo-image-picker';
+import { router } from 'expo-router';
+import { useMemo, useState } from 'react';
+import { Alert, Image, StyleSheet, View } from 'react-native';
+import {
+  Button,
+  Card,
+  Chip,
+  Divider,
+  IconButton,
+  Switch,
+  Text,
+  TextInput,
+  useTheme,
+} from 'react-native-paper';
+import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { useAppData } from '@/app/store/AppDataContext';
+import type { DayId, Product } from '@/app/store/types';
+import { formatEuro } from '@/app/utils/format';
+import { getProductImageSource } from '@/app/utils/productImages';
+const ALL_DAYS: DayId[] = [1, 2, 3];
 
+type FormState = {
+  name: string;
+  price: string;
+  availableDays: DayId[];
+};
 
-export default function buttonView() {
-    // const [visible, setVisible] = useState(false);
-    // const openMenu = () => setVisible(true);
-    // const closeMenu = () => setVisible(false);
+const EMPTY_FORM: FormState = { name: '', price: '', availableDays: [...ALL_DAYS] };
 
-    const [nameText, setNameText] = useState("");
-    const [priceText, setPriceText] = useState("");
+export default function ProductManagementScreen() {
+  const theme = useTheme();
+  const {
+    products,
+    upsertProduct,
+    removeProduct,
+    toggleProductStats,
+    setProductAvailability,
+    updateProductImage,
+    reorderProducts,
+  } = useAppData();
 
-    const [page, setPage] = useState<number>(0);
-    const [numberOfItemsPerPageList] = useState([8, 10, 12]);
-    const [itemsPerPage, onItemsPerPageChange] = useState(
-        numberOfItemsPerPageList[0]
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+
+  const sortedProducts = useMemo(
+    () => [...products].sort((a, b) => a.sortOrder - b.sortOrder),
+    [products],
+  );
+
+  const openCreate = () => {
+    setEditingProduct(null);
+    setForm(EMPTY_FORM);
+    setEditorOpen(true);
+  };
+
+  const openEdit = (product: Product) => {
+    setEditingProduct(product);
+    setForm({
+      name: product.name,
+      price: product.price.toFixed(2).replace('.', ','),
+      availableDays: product.availableDays,
+    });
+    setEditorOpen(true);
+  };
+
+  const toggleFormDay = (day: DayId) => {
+    setForm((prev) => {
+      const exists = prev.availableDays.includes(day);
+      const next = exists
+        ? prev.availableDays.filter((entry) => entry !== day)
+        : [...prev.availableDays, day].sort((a, b) => a - b);
+
+      return {
+        ...prev,
+        availableDays: next.length > 0 ? next : prev.availableDays,
+      };
+    });
+  };
+
+  const toggleProductDay = async (product: Product, day: DayId) => {
+    const exists = product.availableDays.includes(day);
+    const nextDays = exists
+      ? product.availableDays.filter((entry) => entry !== day)
+      : [...product.availableDays, day].sort((a, b) => a - b);
+
+    if (nextDays.length === 0) {
+      return;
+    }
+
+    await setProductAvailability(product.id, nextDays as DayId[]);
+  };
+
+  const saveEditor = async () => {
+    const numericPrice = Number(form.price.replace(',', '.'));
+
+    await upsertProduct(
+      {
+        name: form.name,
+        price: numericPrice,
+        availableDays: form.availableDays,
+      },
+      editingProduct?.id,
     );
 
-    const [lockName, setLockName] = useState(false);
-    const [visible, setVisible] = useState(false);
-    const showDialog = () => setVisible(true);
-    const hideDialog = () => setVisible(false);
+    setEditorOpen(false);
+    setForm(EMPTY_FORM);
+    setEditingProduct(null);
+  };
 
-    const from = page * itemsPerPage;
-    const to = Math.min((page + 1) * itemsPerPage, productList.getAll().length);
+  const pickImage = async (product: Product) => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.85,
+    });
 
-    useEffect(() => {
-        setPage(0);
-    }, [itemsPerPage]);
+    if (!result.canceled) {
+      await updateProductImage(product.id, result.assets[0].uri);
+    }
+  };
 
-    return (
-        <PaperProvider>
-            <View style={styles.wholeDisplay}>
+  return (
+    <View style={[styles.screen, { backgroundColor: theme.colors.background }]}>
+      <View style={styles.glowTop} />
+      <View style={styles.headerRow}>
+        <View>
+          <Text variant="headlineMedium" style={styles.title}>Produkte</Text>
+          <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+            Preise, Bilder, Tage und Statistik-Relevanz verwalten
+          </Text>
+        </View>
+        <View style={styles.headerActions}>
+          <Button mode="contained" onPress={openCreate}>Neues Produkt</Button>
+          <Button
+            mode="contained-tonal"
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/(tabs)');
+              }
+            }}
+          >
+            Zurück
+          </Button>
+        </View>
+      </View>
 
-                <View style={styles.vertical}>
-                    <Button onPress={() => {
-                        setLockName(false);
-                        setNameText("");
-                        setPriceText("");
-                        showDialog();
-                    }}
-                        mode="contained-tonal"
-                        style={{ marginHorizontal: 10, backgroundColor: "#788DC5" }}>
-                        <ThemedText style={styles.Text}>Neu</ThemedText>
-                    </Button>
-
-                    {/* <Button onLongPress={() => {
-                        productList.getAll().forEach(p => productList.removeProduct(p.getName()));
-                        router.navigate("/buttonView");
-                    }}
-                    mode="contained-tonal"
-                    style={{marginHorizontal: 10, backgroundColor: "#D44737"}}>
-                        <ThemedText style={styles.Text}>Alle löschen</ThemedText>
-                    </Button> */}
-                </View>
-
-                <DataTable>
-                    <DataTable.Header theme={DarkTheme}>
-                        <DataTable.Title>
-                            <ThemedText style={styles.Text}>Name</ThemedText>
-                        </DataTable.Title>
-                        <DataTable.Title><ThemedText style={styles.Text}>Preis</ThemedText></DataTable.Title>
-                        <DataTable.Title><ThemedText style={styles.Text}>Statistik</ThemedText></DataTable.Title>
-                        <DataTable.Title numeric><ThemedText style={styles.Text}>Aktion</ThemedText></DataTable.Title>
-                    </DataTable.Header>
-
-                    {productList.getAll().slice(from, to).map((prod) => (
-                        <Pressable onPress={() => {
-                            setNameText(prod.name);
-                            setLockName(true);
-                            setPriceText(prod.price.toString());
-                            showDialog();
-                        }}>
-                            <DataTable.Row key={prod.getId()}>
-                                <DataTable.Cell><ThemedText style={styles.Text}>{prod.name}</ThemedText></DataTable.Cell>
-                                <DataTable.Cell><ThemedText style={styles.Text}>{prod.price}</ThemedText></DataTable.Cell>
-                                <DataTable.Cell>
-                                    <Button onPress={() => {
-                                        prod.stat = !prod.stat;
-                                        productList.save();
-                                        router.navigate("/buttonView");
-                                    }}>
-                                        <ThemedText style={styles.Text}>{prod.stat ? "Ja" : "Nein"}</ThemedText>
-                                    </Button>
-                                </DataTable.Cell>
-
-                                <DataTable.Cell numeric style={{ alignItems: 'baseline' }}>
-                                    <Button icon='trash-can-outline' mode="outlined" onLongPress={() => {
-                                        productList.removeProduct(prod.getName());
-                                        router.navigate("/buttonView");
-                                    }}><ThemedText></ThemedText></Button>
-
-                                    <Button icon='camera' mode="outlined" onLongPress={async () => {
-                                        const pickImageAsync = async () => {
-                                            let result = await ImagePicker.launchImageLibraryAsync({
-                                                mediaTypes: ['images'],
-                                                allowsEditing: true,
-                                                quality: 1,
-                                            });
-
-                                            if (!result.canceled) {
-                                                console.log(result);
-                                                prod.setPicture(result.assets[0].uri);
-                                                productList.save();
-                                            } else {
-                                                alert('You did not select any image.');
-                                            }
-                                        };
-                                        pickImageAsync();
-                                    }}><ThemedText></ThemedText></Button>
-                                    {/* <ThemedText>hello</ThemedText> */}
-                                </DataTable.Cell>
-                            </DataTable.Row>
-                        </Pressable>
-                    ))}
-
-                    <DataTable.Pagination
-                        page={page}
-                        numberOfPages={Math.ceil(productList.getAll().length / itemsPerPage)}
-                        onPageChange={(page) => setPage(page)}
-                        label={`${from + 1}-${to} of ${productList.getAll().length}`}
-                        numberOfItemsPerPageList={numberOfItemsPerPageList}
-                        numberOfItemsPerPage={itemsPerPage}
-                        onItemsPerPageChange={onItemsPerPageChange}
-                        showFastPaginationControls
-                        selectPageDropdownLabel={'Rows per page'}
-                    />
-                </DataTable>
+      {editorOpen ? (
+        <Card style={[styles.editorCard, { backgroundColor: theme.colors.surface }]}>
+          <Card.Content style={styles.dialogContent}>
+            <Text variant="titleMedium">{editingProduct ? 'Produkt bearbeiten' : 'Neues Produkt'}</Text>
+            <TextInput
+              mode="outlined"
+              label="Name"
+              value={form.name}
+              onChangeText={(name) => setForm((prev) => ({ ...prev, name }))}
+            />
+            <TextInput
+              mode="outlined"
+              label="Preis"
+              value={form.price}
+              onChangeText={(price) => setForm((prev) => ({ ...prev, price }))}
+              right={<TextInput.Affix text="€" />}
+              keyboardType="decimal-pad"
+            />
+            <View style={styles.dayEditorRow}>
+              <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+                Angeboten an Tag:
+              </Text>
+              <View style={styles.dayChipWrap}>
+                {ALL_DAYS.map((day) => {
+                  const selected = form.availableDays.includes(day);
+                  return (
+                    <Chip
+                      key={day}
+                      selected={selected}
+                      onPress={() => toggleFormDay(day)}
+                      showSelectedCheck={false}
+                      style={{ backgroundColor: selected ? theme.colors.primary : theme.colors.surfaceVariant }}
+                      textStyle={{ color: selected ? theme.colors.onPrimary : theme.colors.onSurface }}
+                    >
+                      Tag {day}
+                    </Chip>
+                  );
+                })}
+              </View>
             </View>
+            <View style={styles.editorActions}>
+              <Button onPress={() => setEditorOpen(false)}>Abbrechen</Button>
+              <Button mode="contained" onPress={() => void saveEditor()}>Speichern</Button>
+            </View>
+          </Card.Content>
+        </Card>
+      ) : null}
 
-            <Portal>
-                <Dialog visible={visible} onDismiss={hideDialog}>
-                    <Dialog.Title>{lockName ? "Preis ändern" : "Neues Produkt hinzufügen"}</Dialog.Title>
-                    <Dialog.Content>
-                        <TextInput
-                            label="Name"
-                            mode="outlined"
-                            placeholder="Enter name"
-                            disabled={lockName}
-                            value={nameText}
-                            onChangeText={text => setNameText(text)}
-                        />
-                        <TextInput
-                            label="Price"
-                            mode="outlined"
-                            placeholder="0.00"
-                            keyboardType="numeric"
-                            right={<TextInput.Affix text="€" />}
-                            value={priceText}
-                            onChangeText={text => setPriceText(text)}
-                        />
-                    </Dialog.Content>
-                    <Dialog.Actions>
-                        <Button onPress={() => {
-                            productList.addProduct(nameText.trim(), parseFloat(priceText.replace(",", ".")));
-                            hideDialog();
-                            router.navigate("/buttonView");
-                        }}>Speichern</Button>
-                        <Button onPress={hideDialog}>Abbrechen</Button>
-                    </Dialog.Actions>
-                </Dialog>
-            </Portal>
-        </PaperProvider>
-    );
+      <Divider style={styles.listDivider} />
 
+      <GestureHandlerRootView style={styles.listRoot}>
+        <DraggableFlatList
+          data={sortedProducts}
+          keyExtractor={(item) => item.id.toString()}
+          contentContainerStyle={styles.content}
+          onDragEnd={({ data }) => {
+            void reorderProducts(data.map((item) => item.id));
+          }}
+          activationDistance={8}
+          renderItem={({ item, drag, isActive }: RenderItemParams<Product>) => (
+            <Card
+              key={item.id}
+              style={[
+                styles.productCard,
+                { backgroundColor: theme.colors.surface },
+                isActive ? styles.dragActiveCard : undefined,
+              ]}
+            >
+              <Card.Content>
+                <View style={styles.productRow}>
+                  <Image source={getProductImageSource(item)} style={styles.image} />
+                  <View style={styles.metaCol}>
+                    <Text variant="titleMedium" style={styles.productName}>{item.name}</Text>
+                    <Text variant="bodyLarge" style={{ color: theme.colors.primary }}>
+                      {formatEuro(item.price)}
+                    </Text>
+
+                    <View style={styles.dayChipWrap}>
+                      {ALL_DAYS.map((day) => {
+                        const selected = item.availableDays.includes(day);
+                        return (
+                          <Chip
+                            key={`${item.id}-${day}`}
+                            compact
+                            selected={selected}
+                            showSelectedCheck={false}
+                            onPress={() => {
+                              void toggleProductDay(item, day);
+                            }}
+                            style={{ backgroundColor: selected ? theme.colors.secondary : theme.colors.surfaceVariant }}
+                            textStyle={{ color: selected ? theme.colors.onSecondary : theme.colors.onSurface }}
+                          >
+                            T{day}
+                          </Chip>
+                        );
+                      })}
+                    </View>
+
+                    <View style={styles.switchRow}>
+                      <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+                        In Statistik anzeigen
+                      </Text>
+                      <Switch
+                        value={item.includeInStats}
+                        onValueChange={() => {
+                          void toggleProductStats(item.id);
+                        }}
+                      />
+                    </View>
+                  </View>
+                  <View style={styles.actionsCol}>
+                    <IconButton
+                      icon="drag"
+                      mode="contained-tonal"
+                      onLongPress={drag}
+                      onPressIn={drag}
+                    />
+                    <IconButton icon="pencil" mode="contained-tonal" onPress={() => openEdit(item)} />
+                    <IconButton icon="camera" mode="contained-tonal" onPress={() => void pickImage(item)} />
+                    <IconButton
+                      icon="trash-can-outline"
+                      mode="contained-tonal"
+                      iconColor={theme.colors.error}
+                      onPress={() => {
+                        Alert.alert(
+                          'Produkt löschen?',
+                          `${item.name} wird aus der Liste und aus allen gespeicherten Bestellungen entfernt.`,
+                          [
+                            { text: 'Abbrechen', style: 'cancel' },
+                            {
+                              text: 'Löschen',
+                              style: 'destructive',
+                              onPress: () => {
+                                void removeProduct(item.id);
+                              },
+                            },
+                          ],
+                        );
+                      }}
+                    />
+                  </View>
+                </View>
+              </Card.Content>
+            </Card>
+          )}
+          ListEmptyComponent={
+            <Card style={[styles.emptyCard, { backgroundColor: theme.colors.surfaceVariant }]}>
+              <Card.Content>
+                <Text variant="titleMedium">Noch keine Produkte vorhanden</Text>
+                <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+                  Lege dein erstes Produkt über „Neues Produkt“ an.
+                </Text>
+              </Card.Content>
+            </Card>
+          }
+        />
+      </GestureHandlerRootView>
+
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-    Text: {
-        color: '#FFFFFF',
-    },
-    wholeDisplay: {
-        backgroundColor: "#202020",
-        height: '100%',
-        width: '100%',
-    },
-    vertical: {
-        flexDirection: 'row',
-        //height: '100%',
-        width: '100%',
-        justifyContent: 'center',
-        marginBottom: 20,
-        marginTop: 20,
-    },
+  screen: {
+    flex: 1,
+    paddingTop: 58,
+    paddingHorizontal: 20,
+  },
+  glowTop: {
+    position: 'absolute',
+    right: -80,
+    bottom: -120,
+    width: 260,
+    height: 260,
+    borderRadius: 999,
+    backgroundColor: 'rgba(120, 167, 255, 0.14)',
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 12,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  title: {
+    fontWeight: '700',
+  },
+  content: {
+    paddingBottom: 18,
+    gap: 10,
+  },
+  listRoot: {
+    flex: 1,
+  },
+  listDivider: {
+    marginBottom: 10,
+  },
+  editorCard: {
+    borderRadius: 14,
+    marginBottom: 10,
+  },
+  editorActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  dayEditorRow: {
+    gap: 8,
+  },
+  dayChipWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  productCard: {
+    borderRadius: 14,
+  },
+  dragActiveCard: {
+    opacity: 0.9,
+  },
+  productRow: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+  },
+  image: {
+    width: 84,
+    height: 84,
+    borderRadius: 10,
+  },
+  metaCol: {
+    flex: 1,
+    gap: 6,
+  },
+  productName: {
+    fontWeight: '700',
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 2,
+  },
+  actionsCol: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  emptyCard: {
+    borderRadius: 14,
+  },
+  dialogContent: {
+    gap: 10,
+  },
 });

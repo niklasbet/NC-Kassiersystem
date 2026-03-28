@@ -1,48 +1,36 @@
+import { AntDesign, FontAwesome6 } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-import React from 'react';
 
-import { TabBarIcon } from '@/components/navigation/TabBarIcon';
-import { Colors } from '@/constants/Colors';
-import { useColorScheme } from '@/hooks/useColorScheme';
-import { AntDesign, Entypo, FontAwesome6 } from '@expo/vector-icons';
-import { DarkTheme, useTheme } from '@react-navigation/native';
-import { Appearance, BackHandler } from 'react-native';
+import { appTheme } from '@/app/theme/appTheme';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
-//marvin war hierrrr
-
-Appearance.setColorScheme('dark');
-
   return (
     <Tabs
-      tabBarActiveTintColor='#707070'
       screenOptions={{
         headerShown: false,
+        tabBarActiveTintColor: appTheme.colors.primary,
+        tabBarInactiveTintColor: appTheme.colors.onSurfaceVariant,
         tabBarStyle: {
-          backgroundColor: '#202020',
-        }
+          backgroundColor: appTheme.colors.surface,
+          borderTopWidth: 0,
+          height: 66,
+          paddingBottom: 8,
+          paddingTop: 6,
+        },
       }}
-      useTheme={DarkTheme}
-      >
+    >
       <Tabs.Screen
         name="index"
         options={{
           title: 'Kasse',
-          tabBarIcon: ({ color, focused }) => (
-            // <Entypo name="credit" size={24} color={color} />
-            <FontAwesome6 name="cash-register" size={24} color={color} />
-          ),
+          tabBarIcon: ({ color }) => <FontAwesome6 name="cash-register" size={20} color={color} />,
         }}
       />
       <Tabs.Screen
         name="explore"
         options={{
           title: 'Statistik',
-          tabBarIcon: ({ color, focused }) => (
-            <AntDesign name="barschart" size={24} color={color} />
-          ),
+          tabBarIcon: ({ color }) => <AntDesign name="barschart" size={21} color={color} />,
         }}
       />
     </Tabs>

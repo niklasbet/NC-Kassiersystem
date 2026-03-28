@@ -1,42 +1,54 @@
-import { DarkTheme, DefaultTheme, NavigationContainer, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
-import 'react-native-reanimated';
+import { ActivityIndicator, View } from 'react-native';
 import { PaperProvider } from 'react-native-paper';
 
+import { AppDataProvider, useAppData } from '@/app/store/AppDataContext';
+import { appTheme } from '@/app/theme/appTheme';
 
-import { useColorScheme } from '@/hooks/useColorScheme';
-import { View } from 'react-native';
-
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
-export default function RootLayout() {
-  const colorScheme = useColorScheme();
-  const [loaded] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-  });
+function RootStack() {
+  const { isReady } = useAppData();
 
   useEffect(() => {
-    if (loaded) {
+    if (isReady) {
       SplashScreen.hideAsync();
     }
-  }, [loaded]);
+  }, [isReady]);
 
-  if (!loaded) {
-    return null;
+  if (!isReady) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: appTheme.colors.background,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <ActivityIndicator size="large" color={appTheme.colors.primary} />
+      </View>
+    );
   }
 
   return (
-    <PaperProvider theme={DarkTheme}>
-      {/* <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}> */}
-        <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="+not-found" />
-        </Stack>
-      {/* </ThemeProvider> */}
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="buttonView" options={{ presentation: 'fullScreenModal' }} />
+      <Stack.Screen name="historyView" options={{ presentation: 'fullScreenModal' }} />
+      <Stack.Screen name="+not-found" />
+    </Stack>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <PaperProvider theme={appTheme}>
+      <AppDataProvider>
+        <RootStack />
+      </AppDataProvider>
     </PaperProvider>
   );
 }

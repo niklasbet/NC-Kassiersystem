@@ -13,7 +13,8 @@
       "resizeMode": "contain"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.anonymous.NCKassiersystem"
     },
     "android": {
       "adaptiveIcon": {
