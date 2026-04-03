@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Alert, LayoutChangeEvent, StyleSheet, View, useWindowDimensions } from 'react-native';
 import {
   Button,
   Card,
@@ -9,29 +9,50 @@ import {
   useTheme,
 } from 'react-native-paper';
 
-import { useAppData } from '@/app/store/AppDataContext';
-import type { BillRecord } from '@/app/store/types';
-import { formatDateTime, formatEuro } from '@/app/utils/format';
+import { useAppData } from '@/src/store/AppDataContext';
+import type { BillRecord } from '@/src/store/types';
+import { formatDateTime, formatEuro } from '@/src/utils/format';
 
-const PAGE_SIZE = 8;
+const CARD_GAP = 10;
+const MIN_PAGE_SIZE = 1;
 
 export default function HistoryScreen() {
   const theme = useTheme();
+  const { width } = useWindowDimensions();
   const { bills, products, removeBill, selectedDay } = useAppData();
+  const isNarrow = width < 680;
 
   const [page, setPage] = useState(0);
+  const [listHeight, setListHeight] = useState(0);
+  const [measuredCardHeight, setMeasuredCardHeight] = useState(0);
 
   const orderedBills = useMemo(
     () => [...bills].sort((a, b) => (a.datetime < b.datetime ? 1 : -1)),
     [bills],
   );
 
-  const pageCount = Math.max(1, Math.ceil(orderedBills.length / PAGE_SIZE));
+  const pageSize = useMemo(() => {
+    if (listHeight <= 0 || measuredCardHeight <= 0) {
+      return 5;
+    }
+    return Math.max(
+      MIN_PAGE_SIZE,
+      Math.floor((listHeight + CARD_GAP) / (measuredCardHeight + CARD_GAP)),
+    );
+  }, [listHeight, measuredCardHeight]);
+
+  const pageCount = Math.max(1, Math.ceil(orderedBills.length / pageSize));
   const clampedPage = Math.min(page, pageCount - 1);
 
+  useEffect(() => {
+    if (page !== clampedPage) {
+      setPage(clampedPage);
+    }
+  }, [clampedPage, page]);
+
   const visibleBills = orderedBills.slice(
-    clampedPage * PAGE_SIZE,
-    clampedPage * PAGE_SIZE + PAGE_SIZE,
+    clampedPage * pageSize,
+    clampedPage * pageSize + pageSize,
   );
 
   const billLines = (bill: BillRecord) =>
@@ -45,11 +66,22 @@ export default function HistoryScreen() {
         return `${amount}x ${name} · ${price}`;
       });
 
+  const onListLayout = (event: LayoutChangeEvent) => {
+    setListHeight(event.nativeEvent.layout.height);
+  };
+
+  const onBillCardLayout = (event: LayoutChangeEvent) => {
+    const height = event.nativeEvent.layout.height;
+    if (height > 0 && (measuredCardHeight === 0 || Math.abs(measuredCardHeight - height) > 2)) {
+      setMeasuredCardHeight(height);
+    }
+  };
+
   return (
     <View style={[styles.screen, { backgroundColor: theme.colors.background }]}> 
       <View style={styles.glowTop} />
       <View style={styles.headerRow}>
-        <View style={styles.headerTopRow}>
+        <View style={[styles.headerTopRow, isNarrow && styles.headerTopRowNarrow]}>
           <View>
             <Text variant="headlineMedium" style={styles.title}>Bestellverlauf</Text>
             <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
@@ -71,9 +103,13 @@ export default function HistoryScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <View style={styles.content} onLayout={onListLayout}>
         {visibleBills.map((bill) => (
-          <Card key={bill.id} style={[styles.billCard, { backgroundColor: theme.colors.surface }]}> 
+          <Card
+            key={bill.id}
+            style={[styles.billCard, { backgroundColor: theme.colors.surface }]}
+            onLayout={onBillCardLayout}
+          >
             <Card.Content>
               <View style={styles.billHeader}>
                 <Text variant="titleMedium">{formatDateTime(bill.datetime)}</Text>
@@ -104,8 +140,8 @@ export default function HistoryScreen() {
               <Divider style={styles.divider} />
 
               <View style={styles.lineList}>
-                {billLines(bill).map((line) => (
-                  <Text key={line} variant="bodyMedium">
+                {billLines(bill).map((line, index) => (
+                  <Text key={`${bill.id}-${index}`} variant="bodySmall" numberOfLines={1}>
                     {line}
                   </Text>
                 ))}
@@ -133,10 +169,14 @@ export default function HistoryScreen() {
             </Card.Content>
           </Card>
         ) : null}
-      </ScrollView>
+      </View>
 
-      <View style={styles.pagination}>
-        <Button mode="contained-tonal" onPress={() => setPage((prev) => Math.max(0, prev - 1))}>
+      <View style={[styles.pagination, isNarrow && styles.paginationNarrow]}>
+        <Button
+          mode="contained-tonal"
+          disabled={clampedPage === 0}
+          onPress={() => setPage((prev) => Math.max(0, prev - 1))}
+        >
           Zurück
         </Button>
         <Text variant="bodyMedium">
@@ -144,6 +184,7 @@ export default function HistoryScreen() {
         </Text>
         <Button
           mode="contained-tonal"
+          disabled={clampedPage >= pageCount - 1}
           onPress={() => setPage((prev) => Math.min(pageCount - 1, prev + 1))}
         >
           Weiter
@@ -177,11 +218,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  headerTopRowNarrow: {
+    alignItems: 'flex-start',
+    flexWrap: 'wrap',
+  },
   title: {
     fontWeight: '700',
   },
   content: {
-    paddingBottom: 14,
+    flex: 1,
+    paddingBottom: 10,
     gap: 10,
   },
   billCard: {
@@ -214,5 +260,9 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     paddingTop: 8,
     gap: 12,
+  },
+  paginationNarrow: {
+    flexWrap: 'wrap',
+    justifyContent: 'center',
   },
 });

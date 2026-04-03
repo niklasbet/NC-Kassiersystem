@@ -1,17 +1,18 @@
 import { AntDesign, FontAwesome6 } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-
-import { appTheme } from '@/app/theme/appTheme';
+import { useTheme } from 'react-native-paper';
 
 export default function TabLayout() {
+  const theme = useTheme();
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: appTheme.colors.primary,
-        tabBarInactiveTintColor: appTheme.colors.onSurfaceVariant,
+        tabBarActiveTintColor: theme.colors.primary,
+        tabBarInactiveTintColor: theme.colors.onSurfaceVariant,
         tabBarStyle: {
-          backgroundColor: appTheme.colors.surface,
+          backgroundColor: theme.colors.surface,
           borderTopWidth: 0,
           height: 66,
           paddingBottom: 8,
@@ -30,7 +31,7 @@ export default function TabLayout() {
         name="explore"
         options={{
           title: 'Statistik',
-          tabBarIcon: ({ color }) => <AntDesign name="barschart" size={21} color={color} />,
+          tabBarIcon: ({ color }) => <AntDesign name="bar-chart" size={21} color={color} />,
         }}
       />
     </Tabs>

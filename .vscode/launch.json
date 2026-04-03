@@ -7,6 +7,12 @@
         
 
         {
+            "command": "~/Library/Android/sdk/emulator/emulator -avd Medium_Tablet",
+            "name": "Start Android Emulator",
+            "request": "launch",
+            "type": "node-terminal"
+        },
+        {
             "command": "source ~/.bash_profile; npx react-native run-android --mode=release",
             "name": "Install on Android",
             "request": "launch",

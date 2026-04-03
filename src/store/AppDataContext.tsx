@@ -5,9 +5,12 @@ import {
   loadProducts,
   loadSelectedDay,
   loadStats,
+  loadThemeMode,
   saveProducts,
   saveSelectedDay,
   saveStats,
+  saveThemeMode,
+  type ThemeMode,
 } from './storage';
 import type { BillItems, BillRecord, DayId, Product, StatsByDay } from './types';
 
@@ -21,9 +24,12 @@ type AppDataContextType = {
   isReady: boolean;
   products: Product[];
   selectedDay: DayId;
+  themeMode: ThemeMode;
   bills: BillRecord[];
   billsByDay: StatsByDay;
   setSelectedDay: (day: DayId) => Promise<void>;
+  setThemeMode: (mode: ThemeMode) => Promise<void>;
+  toggleThemeMode: () => Promise<void>;
   upsertProduct: (input: ProductInput, id?: number) => Promise<void>;
   removeProduct: (id: number) => Promise<void>;
   toggleProductStats: (id: number) => Promise<void>;
@@ -34,6 +40,7 @@ type AppDataContextType = {
   addBill: (items: BillItems) => Promise<void>;
   removeBill: (id: number) => Promise<void>;
   resetDayStats: () => Promise<void>;
+  replaceDayStats: (day: DayId, bills: BillRecord[]) => Promise<void>;
 };
 
 const AppDataContext = createContext<AppDataContextType | undefined>(undefined);
@@ -55,16 +62,18 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const [isReady, setIsReady] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedDay, setSelectedDayState] = useState<DayId>(1);
+  const [themeMode, setThemeModeState] = useState<ThemeMode>('light');
   const [statsByDay, setStatsByDay] = useState<StatsByDay>(DEFAULT_STATS);
 
   useEffect(() => {
     let mounted = true;
 
     const hydrate = async () => {
-      const [storedProducts, storedStats, storedDay] = await Promise.all([
+      const [storedProducts, storedStats, storedDay, storedThemeMode] = await Promise.all([
         loadProducts(),
         loadStats(),
         loadSelectedDay(),
+        loadThemeMode(),
       ]);
 
       if (!mounted) {
@@ -74,6 +83,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       setProducts(storedProducts);
       setStatsByDay(storedStats);
       setSelectedDayState(storedDay);
+      setThemeModeState(storedThemeMode);
       setIsReady(true);
     };
 
@@ -88,6 +98,17 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     setSelectedDayState(day);
     await saveSelectedDay(day);
   }, []);
+
+  const setThemeMode = useCallback(async (mode: ThemeMode) => {
+    setThemeModeState(mode);
+    await saveThemeMode(mode);
+  }, []);
+
+  const toggleThemeMode = useCallback(async () => {
+    const nextMode: ThemeMode = themeMode === 'light' ? 'dark' : 'light';
+    setThemeModeState(nextMode);
+    await saveThemeMode(nextMode);
+  }, [themeMode]);
 
   const upsertProduct = useCallback(async (input: ProductInput, id?: number) => {
     const normalizedName = input.name.trim();
@@ -300,13 +321,26 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     await saveStats(nextStats);
   }, [selectedDay, statsByDay]);
 
+  const replaceDayStats = useCallback(async (day: DayId, bills: BillRecord[]) => {
+    const nextStats: StatsByDay = {
+      ...statsByDay,
+      [day]: bills,
+    };
+
+    setStatsByDay(nextStats);
+    await saveStats(nextStats);
+  }, [statsByDay]);
+
   const value = useMemo<AppDataContextType>(() => ({
     isReady,
     products,
     selectedDay,
+    themeMode,
     bills: statsByDay[selectedDay] ?? [],
     billsByDay: statsByDay,
     setSelectedDay,
+    setThemeMode,
+    toggleThemeMode,
     upsertProduct,
     removeProduct,
     toggleProductStats,
@@ -317,6 +351,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     addBill,
     removeBill,
     resetDayStats,
+    replaceDayStats,
   }), [
     addBill,
     isReady,
@@ -324,9 +359,13 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     removeBill,
     removeProduct,
     resetDayStats,
+    replaceDayStats,
     selectedDay,
+    setThemeMode,
     setSelectedDay,
     statsByDay,
+    themeMode,
+    toggleThemeMode,
     toggleProductStats,
     setProductAvailability,
     updateProductImage,

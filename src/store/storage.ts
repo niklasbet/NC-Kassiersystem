@@ -5,6 +5,7 @@ import type { DayId, Product, StatsByDay } from './types';
 const PRODUCTS_KEY = 'products_v2';
 const STATS_KEY = 'stats_by_day_v2';
 const SELECTED_DAY_KEY = 'selected_day_v2';
+const THEME_MODE_KEY = 'theme_mode_v1';
 
 export const DEFAULT_STATS: StatsByDay = {
   1: [],
@@ -107,4 +108,15 @@ export async function loadSelectedDay(): Promise<DayId> {
 
 export async function saveSelectedDay(day: DayId): Promise<void> {
   await AsyncStorage.setItem(SELECTED_DAY_KEY, String(day));
+}
+
+export type ThemeMode = 'light' | 'dark';
+
+export async function loadThemeMode(): Promise<ThemeMode> {
+  const raw = await AsyncStorage.getItem(THEME_MODE_KEY);
+  return raw === 'dark' ? 'dark' : 'light';
+}
+
+export async function saveThemeMode(mode: ThemeMode): Promise<void> {
+  await AsyncStorage.setItem(THEME_MODE_KEY, mode);
 }

@@ -15,22 +15,18 @@ import {
 } from 'react-native-paper';
 
 import { ConfirmModal } from '@/components/ConfirmModal';
-import { useAppData } from '@/app/store/AppDataContext';
-import type { BillRecord, DayId, Product } from '@/app/store/types';
-import { palette } from '@/app/theme/appTheme';
-import { formatEuro } from '@/app/utils/format';
-import { exportStatsReport, type ExportFormat, type ExportSection } from '@/app/utils/statsExport';
+import { useAppData } from '@/src/store/AppDataContext';
+import type { BillRecord, DayId, Product } from '@/src/store/types';
+import { palette } from '@/src/theme/appTheme';
+import { formatEuro } from '@/src/utils/format';
+import { exportStatsReport, type ExportFormat, type ExportSection } from '@/src/utils/statsExport';
 
 const chartPalette = ['#f6b351', '#6fd6b6', '#78a7ff', '#ef6a6a', '#cf93ff', '#62dfff', '#f2dc7f', '#84ec7b'];
 const DEFAULT_EXPORT_SECTIONS: ExportSection[] = [
   'summary',
-  'products',
-  'bills',
-  'lineItems',
   'hourlyRevenue',
   'productShare',
   'dayComparison',
-  'assortment',
 ];
 
 function sumProductAmount(product: Product, bills: BillRecord[]): number {
@@ -60,7 +56,15 @@ function withOpacity(hexColor: string, alpha: number): string {
 export default function StatsScreen() {
   const theme = useTheme();
   const { width } = useWindowDimensions();
-  const { products, bills, billsByDay, selectedDay, setSelectedDay, resetDayStats } = useAppData();
+  const isNarrow = width < 760;
+  const isVeryNarrow = width < 520;
+  const isSmallScreen = width < 620;
+  const pieSize = width < 430 ? 150 : width < 620 ? 180 : 220;
+  const hourBarWidth = width < 430 ? 14 : 18;
+  const hourTrackWidth = width < 430 ? 10 : 14;
+  const hourTrackHeight = width < 430 ? 118 : 142;
+  const hourBarGap = 4;
+  const { products, bills, billsByDay, selectedDay, setSelectedDay, resetDayStats, replaceDayStats, themeMode, toggleThemeMode } = useAppData();
 
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -68,8 +72,11 @@ export default function StatsScreen() {
   const [snackbarText, setSnackbarText] = useState<string | null>(null);
   const [selectedExportSections, setSelectedExportSections] = useState<ExportSection[]>(DEFAULT_EXPORT_SECTIONS);
   const [selectedExportFormat, setSelectedExportFormat] = useState<ExportFormat>('csv');
+  const [selectedExportDays, setSelectedExportDays] = useState<DayId[]>([selectedDay]);
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
   const [selectedHour, setSelectedHour] = useState<number | null>(null);
+  const [resetUndoBills, setResetUndoBills] = useState<BillRecord[] | null>(null);
+  const [resetUndoVisible, setResetUndoVisible] = useState(false);
 
   const productStats = useMemo(
     () =>
@@ -94,16 +101,6 @@ export default function StatsScreen() {
     [productStats],
   );
 
-  const soldProductCount = useMemo(
-    () => productStats.filter((entry) => entry.amount > 0).length,
-    [productStats],
-  );
-
-  const activeProductsToday = useMemo(
-    () => products.filter((product) => product.availableDays.includes(selectedDay)).length,
-    [products, selectedDay],
-  );
-
   const hourlyRevenue = useMemo(() => {
     const buckets = Array.from({ length: 24 }, (_, hour) => ({ hour, value: 0 }));
     bills.forEach((bill) => {
@@ -114,6 +111,7 @@ export default function StatsScreen() {
     });
     return buckets;
   }, [bills]);
+  const hourlyContentWidth = hourlyRevenue.length * hourBarWidth + (hourlyRevenue.length - 1) * hourBarGap;
 
   const maxHourlyRevenue = Math.max(1, ...hourlyRevenue.map((entry) => entry.value));
 
@@ -159,16 +157,26 @@ export default function StatsScreen() {
   };
 
   const handleResetDay = async () => {
+    setResetUndoBills(billsByDay[selectedDay] ?? []);
     await resetDayStats();
     setConfirmResetOpen(false);
+    setResetUndoVisible(true);
+  };
+
+  const handleUndoReset = async () => {
+    if (!resetUndoBills) {
+      return;
+    }
+    await replaceDayStats(selectedDay, resetUndoBills);
+    setResetUndoVisible(false);
+    setResetUndoBills(null);
   };
 
   const handleExport = async (format: ExportFormat) => {
     try {
       setIsExporting(true);
       await exportStatsReport({
-        day: selectedDay,
-        bills,
+        selectedDays: selectedExportDays,
         products,
         format,
         sections: selectedExportSections,
@@ -191,6 +199,20 @@ export default function StatsScreen() {
       }
       return [...prev, section];
     });
+  };
+
+  const toggleExportDay = (day: DayId) => {
+    setSelectedExportDays((prev) => {
+      if (prev.includes(day)) {
+        const next = prev.filter((entry) => entry !== day);
+        return next.length > 0 ? next : prev;
+      }
+      return [...prev, day].sort((a, b) => a - b) as DayId[];
+    });
+  };
+
+  const selectAllDays = () => {
+    setSelectedExportDays([1, 2, 3]);
   };
 
   const toggleProductHighlight = (productId: number) => {
@@ -217,19 +239,27 @@ export default function StatsScreen() {
     <View style={[styles.screen, { backgroundColor: theme.colors.background }]}>
       <View style={styles.glowTop} />
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.headerRow}>
+        <View style={[styles.headerRow, isNarrow && styles.headerRowNarrow]}>
           <View>
             <Text variant="headlineMedium" style={styles.title}>Statistik</Text>
             <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
               Erweiterte Auswertung für den ausgewählten Tag
             </Text>
           </View>
-          <Button mode="contained-tonal" onPress={() => router.push('/historyView')}>
-            Bestellverlauf
-          </Button>
+          <View style={[styles.headerActions, isVeryNarrow && styles.headerActionsNarrow]}>
+            <Button mode="contained-tonal" compact onPress={() => void toggleThemeMode()}>
+              {themeMode === 'light' ? 'Dark Mode' : 'Light Mode'}
+            </Button>
+            <Button mode="contained-tonal" onPress={() => router.push('/historyView')}>
+              Bestellverlauf
+            </Button>
+            <Button mode="contained-tonal" onPress={() => setExportOpen(true)}>
+              Export
+            </Button>
+          </View>
         </View>
 
-        <View style={styles.dayRow}>
+        <View style={[styles.dayRow, isVeryNarrow && styles.dayRowNarrow]}>
           {[1, 2, 3].map((day) => (
             <Chip
               key={day}
@@ -272,9 +302,9 @@ export default function StatsScreen() {
           <Card.Content>
             <Text variant="titleLarge" style={styles.sectionTitle}>Verkaufsverteilung (Menge)</Text>
             <Divider style={styles.sectionDivider} />
-            <View style={styles.chartRow}>
-              <PieChart widthAndHeight={220} series={series} sliceColor={colors} />
-              <View style={styles.legendWrap}>
+            <View style={[styles.chartRow, isSmallScreen && styles.chartRowSmall]}>
+              <PieChart widthAndHeight={pieSize} series={series} sliceColor={colors} />
+              <View style={[styles.legendWrap, isSmallScreen && styles.legendWrapSmall]}>
                 {productStats.map((entry) => {
                   const amountPercent = totalAmount > 0 ? (entry.amount * 100) / totalAmount : 0;
                   const revenuePercent = totalRevenue > 0 ? (entry.revenue * 100) / totalRevenue : 0;
@@ -286,6 +316,7 @@ export default function StatsScreen() {
                       onPress={() => toggleProductHighlight(entry.product.id)}
                       style={[
                         styles.legendChip,
+                        isSmallScreen && styles.legendChipSmall,
                         { backgroundColor: theme.colors.surfaceVariant },
                         isSelected && { borderColor: entry.color, borderWidth: 2 },
                         isDimmed && { opacity: 0.72 },
@@ -317,12 +348,19 @@ export default function StatsScreen() {
           <Card.Content>
             <Text variant="titleLarge" style={styles.sectionTitle}>Umsatz pro Stunde</Text>
             <Divider style={styles.sectionDivider} />
-            <View style={styles.hourlyWrap}>
+            <ScrollView horizontal showsHorizontalScrollIndicator contentContainerStyle={styles.hourlyScrollContent}>
+              <View style={[styles.hourlyWrap, { width: hourlyContentWidth, gap: hourBarGap }]}>
               {hourlyRevenue.map((entry) => (
-                <Pressable key={entry.hour} onPress={() => toggleHourHighlight(entry.hour)} style={styles.hourBarCol}>
+                <Pressable
+                  key={entry.hour}
+                  onPress={() => toggleHourHighlight(entry.hour)}
+                  style={[styles.hourBarCol, { width: hourBarWidth }]}
+                >
                   <View
                     style={[
                       styles.hourBarTrack,
+                      { width: hourTrackWidth, height: hourTrackHeight, borderRadius: hourTrackWidth / 2 },
+                      { backgroundColor: theme.dark ? 'rgba(255,255,255,0.08)' : 'rgba(71,85,105,0.14)' },
                       selectedHour === entry.hour && { borderColor: theme.colors.primary, borderWidth: 1.5 },
                     ]}
                   >
@@ -330,9 +368,15 @@ export default function StatsScreen() {
                       style={[
                         styles.hourBarFill,
                         {
+                          width: hourTrackWidth,
+                          borderRadius: hourTrackWidth / 2,
                           height: `${(entry.value / maxHourlyRevenue) * 100}%`,
                           backgroundColor: (() => {
-                            const baseColor = entry.value > 0 ? theme.colors.tertiary : 'rgba(255,255,255,0.22)';
+                            const baseColor = entry.value > 0
+                              ? theme.colors.tertiary
+                              : theme.dark
+                                ? 'rgba(255,255,255,0.22)'
+                                : 'rgba(71,85,105,0.34)';
                             if (selectedHour === null) {
                               return baseColor;
                             }
@@ -348,6 +392,12 @@ export default function StatsScreen() {
                   <Text style={styles.hourLabel}>{entry.hour}</Text>
                 </Pressable>
               ))}
+              </View>
+            </ScrollView>
+            <View pointerEvents="none" style={styles.hourFadeWrap}>
+              <View style={[styles.hourFadeStep, { backgroundColor: theme.dark ? 'rgba(15,19,24,0.16)' : 'rgba(248,250,252,0.20)' }]} />
+              <View style={[styles.hourFadeStep, { backgroundColor: theme.dark ? 'rgba(15,19,24,0.28)' : 'rgba(248,250,252,0.34)' }]} />
+              <View style={[styles.hourFadeStep, { backgroundColor: theme.dark ? 'rgba(15,19,24,0.42)' : 'rgba(248,250,252,0.48)' }]} />
             </View>
             {selectedHourEntry ? (
               <View style={[styles.hourInfoCard, { backgroundColor: theme.colors.surfaceVariant }]}>
@@ -366,7 +416,7 @@ export default function StatsScreen() {
             <Divider style={styles.sectionDivider} />
             <View style={styles.trendWrap}>
               {dayTrend.map((entry) => (
-                <View key={entry.day} style={styles.trendRow}>
+                <View key={entry.day} style={[styles.trendRow, isSmallScreen && styles.trendRowSmall]}>
                   <Text variant="titleMedium" style={styles.trendDay}>Tag {entry.day}</Text>
                   <Text variant="bodyMedium">{entry.orders} Bestellungen</Text>
                   <Text variant="bodyMedium">{entry.items} Artikel</Text>
@@ -377,24 +427,7 @@ export default function StatsScreen() {
           </Card.Content>
         </Card>
 
-        <Card style={[styles.chartCard, { backgroundColor: theme.colors.surface }]}>
-          <Card.Content>
-            <Text variant="titleLarge" style={styles.sectionTitle}>Sortimentseffizienz</Text>
-            <Divider style={styles.sectionDivider} />
-            <View style={styles.trendRow}>
-              <Text variant="bodyLarge">Aktive Produkte (Tag {selectedDay})</Text>
-              <Text variant="titleMedium">{activeProductsToday}</Text>
-            </View>
-            <View style={styles.trendRow}>
-              <Text variant="bodyLarge">Davon verkauft</Text>
-              <Text variant="titleMedium">{soldProductCount}</Text>
-            </View>
-          </Card.Content>
-        </Card>
-
         <View style={styles.footerActions}>
-          <Button mode="contained-tonal" onPress={() => router.push('/buttonView')}>Produkte verwalten</Button>
-          <Button mode="contained-tonal" onPress={() => setExportOpen(true)}>Export</Button>
           <Button mode="contained-tonal" onPress={() => setConfirmResetOpen(true)} textColor="#3d1515" buttonColor={palette.danger}>
             Tag zurücksetzen
           </Button>
@@ -412,70 +445,99 @@ export default function StatsScreen() {
       />
 
       <Portal>
-        <Modal visible={exportOpen} onDismiss={() => setExportOpen(false)} contentContainerStyle={[styles.exportModalWrap, { backgroundColor: theme.colors.surface }]}>
-          <Text variant="headlineSmall" style={styles.sectionTitle}>Statistik exportieren</Text>
-          <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 4 }}>
-            Tag {selectedDay} in gewünschtem Format exportieren.
-          </Text>
-          <View style={[styles.exportSectionBox, { backgroundColor: theme.colors.surfaceVariant }]}>
-            <View style={styles.exportSectionHeader}>
-              <Text variant="titleMedium">Datenauswahl</Text>
-              <Button compact mode="text" onPress={() => setSelectedExportSections(DEFAULT_EXPORT_SECTIONS)}>
-                Alles wählen
-              </Button>
-            </View>
-            <View style={styles.sectionChipWrap}>
-              <Chip selected={selectedExportSections.includes('summary')} onPress={() => toggleExportSection('summary')}>Summary</Chip>
-              <Chip selected={selectedExportSections.includes('products')} onPress={() => toggleExportSection('products')}>Produkte</Chip>
-              <Chip selected={selectedExportSections.includes('bills')} onPress={() => toggleExportSection('bills')}>Bestellungen</Chip>
-              <Chip selected={selectedExportSections.includes('lineItems')} onPress={() => toggleExportSection('lineItems')}>Positionen</Chip>
-              <Chip selected={selectedExportSections.includes('hourlyRevenue')} onPress={() => toggleExportSection('hourlyRevenue')}>Umsatz/Stunde</Chip>
-              <Chip selected={selectedExportSections.includes('productShare')} onPress={() => toggleExportSection('productShare')}>Produktanteile</Chip>
-              <Chip selected={selectedExportSections.includes('dayComparison')} onPress={() => toggleExportSection('dayComparison')}>Tag-Vergleich</Chip>
-              <Chip selected={selectedExportSections.includes('assortment')} onPress={() => toggleExportSection('assortment')}>Sortiment</Chip>
-            </View>
-          </View>
-
-          <View style={[styles.exportSectionBox, { backgroundColor: theme.colors.surfaceVariant }]}>
-            <Text variant="titleMedium">Format</Text>
-            <View style={styles.formatPicker}>
-              {(['csv', 'json', 'md', 'txt'] as ExportFormat[]).map((format) => {
-                const active = selectedExportFormat === format;
-                return (
-                  <Pressable
-                    key={format}
-                    onPress={() => setSelectedExportFormat(format)}
-                    style={[
-                      styles.formatOption,
-                      {
-                        backgroundColor: active ? theme.colors.primary : theme.colors.surface,
-                        borderColor: active ? theme.colors.primary : 'rgba(255,255,255,0.12)',
-                      },
-                    ]}
+        <Modal visible={exportOpen} onDismiss={() => setExportOpen(false)} contentContainerStyle={[styles.exportModalWrap, { backgroundColor: theme.colors.surface }, isNarrow && styles.exportModalWrapNarrow]}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.exportScrollContent}>
+            <Text variant="headlineSmall" style={styles.sectionTitle}>Statistik exportieren</Text>
+            <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 4 }}>
+              Tag {selectedDay} in gewünschtem Format exportieren.
+            </Text>
+            <View style={[styles.exportSectionBox, { backgroundColor: theme.colors.surfaceVariant }]}>
+              <View style={[styles.exportSectionHeader, isNarrow && styles.exportSectionHeaderNarrow]}>
+                <Text variant="titleMedium">Tage</Text>
+                <Button compact mode="text" onPress={selectAllDays}>
+                  Alle Tage
+                </Button>
+              </View>
+              <View style={styles.sectionChipWrap}>
+                {[1, 2, 3].map((day) => (
+                  <Chip
+                    key={day}
+                    selected={selectedExportDays.includes(day as DayId)}
+                    onPress={() => toggleExportDay(day as DayId)}
                   >
-                    <Text
-                      variant="titleSmall"
-                      style={{ color: active ? theme.colors.onPrimary : theme.colors.onSurface }}
-                    >
-                      {format.toUpperCase()}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+                    Tag {day}
+                  </Chip>
+                ))}
+              </View>
             </View>
-          </View>
 
-          <View style={styles.exportActionRow}>
-            <Button style={styles.exportActionButton} mode="contained" loading={isExporting} disabled={isExporting} onPress={() => void handleExport(selectedExportFormat)}>
-              Jetzt exportieren
-            </Button>
-            <Button style={styles.exportActionButton} mode="contained-tonal" disabled={isExporting} onPress={() => setExportOpen(false)}>Schließen</Button>
-          </View>
+            <View style={[styles.exportSectionBox, { backgroundColor: theme.colors.surfaceVariant }]}>
+              <View style={[styles.exportSectionHeader, isNarrow && styles.exportSectionHeaderNarrow]}>
+                <Text variant="titleMedium">Datenauswahl</Text>
+                <Button compact mode="text" onPress={() => setSelectedExportSections(DEFAULT_EXPORT_SECTIONS)}>
+                  Alles wählen
+                </Button>
+              </View>
+              <View style={styles.sectionChipWrap}>
+                <Chip selected={selectedExportSections.includes('summary')} onPress={() => toggleExportSection('summary')}>Übersicht (Kennzahlen)</Chip>
+                <Chip selected={selectedExportSections.includes('products')} onPress={() => toggleExportSection('products')}>Produktliste</Chip>
+                <Chip selected={selectedExportSections.includes('bills')} onPress={() => toggleExportSection('bills')}>Bestellungen (gesamt)</Chip>
+                <Chip selected={selectedExportSections.includes('lineItems')} onPress={() => toggleExportSection('lineItems')}>Verkaufte Artikel je Bestellung</Chip>
+                <Chip selected={selectedExportSections.includes('hourlyRevenue')} onPress={() => toggleExportSection('hourlyRevenue')}>Umsatz nach Stunde</Chip>
+                <Chip selected={selectedExportSections.includes('productShare')} onPress={() => toggleExportSection('productShare')}>Anteil je Produkt</Chip>
+                <Chip selected={selectedExportSections.includes('dayComparison')} onPress={() => toggleExportSection('dayComparison')}>Vergleich der ausgewählten Tage</Chip>
+              </View>
+            </View>
+
+            <View style={[styles.exportSectionBox, { backgroundColor: theme.colors.surfaceVariant }]}>
+              <Text variant="titleMedium">Format</Text>
+              <View style={styles.formatPicker}>
+                {(['csv', 'xlsx', 'json', 'md', 'txt', 'pdf'] as ExportFormat[]).map((format) => {
+                  const active = selectedExportFormat === format;
+                  return (
+                    <Pressable
+                      key={format}
+                      onPress={() => setSelectedExportFormat(format)}
+                      style={[
+                        styles.formatOption,
+                        {
+                          backgroundColor: active ? theme.colors.primary : theme.colors.surface,
+                          borderColor: active ? theme.colors.primary : 'rgba(255,255,255,0.12)',
+                        },
+                      ]}
+                    >
+                      <Text
+                        variant="titleSmall"
+                        style={{ color: active ? theme.colors.onPrimary : theme.colors.onSurface }}
+                      >
+                        {format.toUpperCase()}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View style={[styles.exportActionRow, isNarrow && styles.exportActionRowNarrow]}>
+              <Button style={[styles.exportActionButton, isNarrow && styles.exportActionButtonNarrow]} mode="contained" loading={isExporting} disabled={isExporting} onPress={() => void handleExport(selectedExportFormat)}>
+                Jetzt exportieren
+              </Button>
+              <Button style={[styles.exportActionButton, isNarrow && styles.exportActionButtonNarrow]} mode="contained-tonal" disabled={isExporting} onPress={() => setExportOpen(false)}>Schließen</Button>
+            </View>
+          </ScrollView>
         </Modal>
       </Portal>
 
       <Snackbar visible={Boolean(snackbarText)} onDismiss={() => setSnackbarText(null)} duration={2400}>
-        {snackbarText}
+        <Text>{snackbarText}</Text>
+      </Snackbar>
+      <Snackbar
+        visible={resetUndoVisible}
+        onDismiss={() => setResetUndoVisible(false)}
+        duration={5000}
+        action={{ label: 'Rückgängig', onPress: () => void handleUndoReset() }}
+      >
+        <Text>Tag {selectedDay} wurde zurückgesetzt</Text>
       </Snackbar>
     </View>
   );
@@ -486,8 +548,12 @@ const styles = StyleSheet.create({
   glowTop: { position: 'absolute', left: -130, top: -110, width: 300, height: 300, borderRadius: 999, backgroundColor: 'rgba(111, 214, 182, 0.12)' },
   content: { paddingHorizontal: 20, paddingTop: 58, paddingBottom: 24, gap: 14 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
+  headerActions: { flexDirection: 'row', gap: 8 },
+  headerRowNarrow: { alignItems: 'flex-start', flexWrap: 'wrap' },
+  headerActionsNarrow: { flexWrap: 'wrap' },
   title: { fontWeight: '700' },
   dayRow: { flexDirection: 'row', gap: 10, marginVertical: 4 },
+  dayRowNarrow: { flexWrap: 'wrap' },
   dayChip: { minWidth: 74, justifyContent: 'center' },
   kpiRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   kpiCard: { borderRadius: 14 },
@@ -500,7 +566,9 @@ const styles = StyleSheet.create({
   sectionTitle: { fontWeight: '700' },
   sectionDivider: { marginVertical: 12 },
   chartRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, alignItems: 'center', justifyContent: 'center' },
+  chartRowSmall: { flexDirection: 'column', alignItems: 'stretch' },
   legendWrap: { minWidth: 280, flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  legendWrapSmall: { minWidth: 0, width: '100%' },
   legendChip: {
     borderRadius: 12,
     paddingVertical: 8,
@@ -511,26 +579,48 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'transparent',
   },
+  legendChipSmall: { minWidth: 120, flexBasis: '48%', maxWidth: '48%' },
   legendChipTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   colorDot: { width: 12, height: 12, borderRadius: 999 },
   legendName: { fontWeight: '700', flexShrink: 1 },
-  hourlyWrap: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, height: 170 },
-  hourBarCol: { width: 18, alignItems: 'center', paddingVertical: 2 },
-  hourBarTrack: { width: 14, height: 142, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 7, justifyContent: 'flex-end', overflow: 'hidden' },
-  hourBarFill: { width: 14, borderRadius: 7 },
+  hourlyScrollContent: { paddingHorizontal: 2, paddingBottom: 4 },
+  hourlyWrap: { flexDirection: 'row', alignItems: 'flex-end', height: 160 },
+  hourBarCol: { alignItems: 'center', paddingVertical: 2 },
+  hourBarTrack: { justifyContent: 'flex-end', overflow: 'hidden' },
+  hourBarFill: {},
   hourLabel: { fontSize: 9, marginTop: 4 },
+  hourFadeWrap: {
+    position: 'absolute',
+    right: 2,
+    top: 56,
+    height: 84,
+    width: 18,
+    flexDirection: 'row',
+    borderTopLeftRadius: 10,
+    borderBottomLeftRadius: 10,
+    overflow: 'hidden',
+  },
+  hourFadeStep: {
+    flex: 1,
+  },
   hourInfoCard: { marginTop: 12, borderRadius: 12, padding: 10, gap: 4 },
   trendWrap: { gap: 8 },
   trendRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  trendRowSmall: { flexWrap: 'wrap', justifyContent: 'flex-start' },
   trendDay: { minWidth: 62 },
-  footerActions: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 10 },
+  footerActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
   exportModalWrap: { marginHorizontal: 20, borderRadius: 20, padding: 16, gap: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  exportModalWrapNarrow: { marginHorizontal: 10, maxHeight: '92%', padding: 12 },
+  exportScrollContent: { gap: 12, paddingBottom: 0 },
   exportSectionBox: { borderRadius: 14, padding: 12, gap: 10 },
   exportSectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  exportSectionHeaderNarrow: { flexWrap: 'wrap', alignItems: 'flex-start', rowGap: 4 },
   sectionChipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   exportButtonWrap: { gap: 10 },
   exportActionRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
+  exportActionRowNarrow: { flexWrap: 'wrap', justifyContent: 'flex-start' },
   exportActionButton: { flex: 1 },
-  formatPicker: { flexDirection: 'row', gap: 8 },
-  formatOption: { flex: 1, borderRadius: 10, borderWidth: 1, paddingVertical: 10, alignItems: 'center' },
+  exportActionButtonNarrow: { flexBasis: '100%' },
+  formatPicker: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  formatOption: { minWidth: 70, borderRadius: 10, borderWidth: 1, paddingVertical: 10, paddingHorizontal: 10, alignItems: 'center' },
 });

@@ -4,13 +4,14 @@ import { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { PaperProvider } from 'react-native-paper';
 
-import { AppDataProvider, useAppData } from '@/app/store/AppDataContext';
-import { appTheme } from '@/app/theme/appTheme';
+import { AppDataProvider, useAppData } from '@/src/store/AppDataContext';
+import { appDarkTheme, appLightTheme } from '@/src/theme/appTheme';
 
 SplashScreen.preventAutoHideAsync();
 
 function RootStack() {
-  const { isReady } = useAppData();
+  const { isReady, themeMode } = useAppData();
+  const activeTheme = themeMode === 'dark' ? appDarkTheme : appLightTheme;
 
   useEffect(() => {
     if (isReady) {
@@ -23,32 +24,32 @@ function RootStack() {
       <View
         style={{
           flex: 1,
-          backgroundColor: appTheme.colors.background,
+          backgroundColor: activeTheme.colors.background,
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
-        <ActivityIndicator size="large" color={appTheme.colors.primary} />
+        <ActivityIndicator size="large" color={activeTheme.colors.primary} />
       </View>
     );
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="buttonView" options={{ presentation: 'fullScreenModal' }} />
-      <Stack.Screen name="historyView" options={{ presentation: 'fullScreenModal' }} />
-      <Stack.Screen name="+not-found" />
-    </Stack>
+    <PaperProvider theme={activeTheme}>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="buttonView" options={{ presentation: 'fullScreenModal' }} />
+        <Stack.Screen name="historyView" options={{ presentation: 'fullScreenModal' }} />
+        <Stack.Screen name="+not-found" />
+      </Stack>
+    </PaperProvider>
   );
 }
 
 export default function RootLayout() {
   return (
-    <PaperProvider theme={appTheme}>
-      <AppDataProvider>
-        <RootStack />
-      </AppDataProvider>
-    </PaperProvider>
+    <AppDataProvider>
+      <RootStack />
+    </AppDataProvider>
   );
 }

@@ -1,8 +1,9 @@
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
   Image,
+  Keyboard,
   LayoutChangeEvent,
   Pressable,
   ScrollView,
@@ -14,39 +15,63 @@ import {
   Button,
   Card,
   Divider,
+  IconButton,
+  Modal,
+  Portal,
+  Snackbar,
   Surface,
   Text,
+  TextInput,
   useTheme,
 } from 'react-native-paper';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { useAppData } from '@/app/store/AppDataContext';
-import type { BillItems, Product } from '@/app/store/types';
-import { palette } from '@/app/theme/appTheme';
-import { formatEuro } from '@/app/utils/format';
+import { useAppData } from '@/src/store/AppDataContext';
+import type { BillItems, DayId, Product } from '@/src/store/types';
+import { palette } from '@/src/theme/appTheme';
+import { formatEuro } from '@/src/utils/format';
 import { ConfirmModal } from '@/components/ConfirmModal';
-import { getProductImageSource } from '@/app/utils/productImages';
+import { getProductImageSource } from '@/src/utils/productImages';
 
 export default function HomeScreen() {
+  const ONBOARDING_SEEN_KEY = 'kasse_onboarding_seen_v1';
   const theme = useTheme();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const isCompactLayout = width < 760;
+  const isNarrowHeader = width < 940;
+  const isSmallScreen = width < 560;
+  const isTabletWide = width >= 820;
 
-  const { products, addBill, selectedDay } = useAppData();
+  const { products, addBill, selectedDay, setSelectedDay } = useAppData();
 
   const [draft, setDraft] = useState<BillItems>({});
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
+  const [orderModalOpen, setOrderModalOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [undoClearSnapshot, setUndoClearSnapshot] = useState<BillItems | null>(null);
+  const [undoClearVisible, setUndoClearVisible] = useState(false);
   const [catalogWidth, setCatalogWidth] = useState(0);
 
-  const visibleProducts = useMemo(
-    () =>
-      products
-        .filter((product) => product.availableDays.includes(selectedDay))
-        .sort((a, b) => a.sortOrder - b.sortOrder),
-    [products, selectedDay],
+  const visibleProducts = useMemo(() => {
+    const base = [...products].sort((a, b) => a.sortOrder - b.sortOrder);
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) {
+      return base;
+    }
+    return base.filter((product) => product.name.toLowerCase().includes(query));
+  }, [products, searchQuery]);
+
+  const productById = useMemo(
+    () => new Map(products.map((product) => [product.id, product])),
+    [products],
   );
 
   const gridColumns = useMemo(() => {
-    const effectiveWidth = catalogWidth || width * 0.58;
+    const effectiveWidth = catalogWidth || width * (isCompactLayout ? 1 : 0.58);
+    if (isTabletWide && effectiveWidth > 760) {
+      return 4;
+    }
     if (effectiveWidth > 900) {
       return 4;
     }
@@ -57,35 +82,46 @@ export default function HomeScreen() {
       return 2;
     }
     return 1;
-  }, [catalogWidth, width]);
+  }, [catalogWidth, width, isCompactLayout, isTabletWide]);
 
   const cardGap = 12;
   const cardWidth = useMemo(() => {
     if (gridColumns === 1) {
       return undefined;
     }
-    const effectiveWidth = catalogWidth || width * 0.58;
+    const effectiveWidth = catalogWidth || width * (isCompactLayout ? 1 : 0.58);
     return Math.max(140, (effectiveWidth - cardGap * (gridColumns - 1)) / gridColumns);
-  }, [catalogWidth, gridColumns, width]);
+  }, [catalogWidth, gridColumns, width, isCompactLayout]);
 
   const compactCard = gridColumns >= 3;
   const ultraCompactCard = gridColumns >= 4;
 
-  const total = useMemo(
-    () =>
-      visibleProducts.reduce((sum, product) => {
-        const amount = draft[product.id] ?? 0;
-        return sum + amount * product.price;
-      }, 0),
-    [draft, visibleProducts],
-  );
+  const total = useMemo(() => {
+    return Object.entries(draft).reduce((sum, [productIdRaw, amount]) => {
+      const productId = Number(productIdRaw);
+      const product = productById.get(productId);
+      if (!product || amount <= 0) {
+        return sum;
+      }
+      return sum + amount * product.price;
+    }, 0);
+  }, [draft, productById]);
 
   const orderLines = useMemo(
-    () =>
-      visibleProducts
-        .map((product) => ({ product, amount: draft[product.id] ?? 0 }))
-        .filter((entry) => entry.amount > 0),
-    [draft, visibleProducts],
+    () => {
+      return Object.entries(draft)
+        .map(([productIdRaw, amount]) => {
+          const productId = Number(productIdRaw);
+          const product = productById.get(productId);
+          if (!product) {
+            return null;
+          }
+          return { product, amount };
+        })
+        .filter((entry): entry is { product: Product; amount: number } => Boolean(entry && entry.amount > 0))
+        .sort((a, b) => a.product.sortOrder - b.product.sortOrder);
+    },
+    [draft, productById],
   );
 
   const changeAmount = (product: Product, delta: number) => {
@@ -97,13 +133,45 @@ export default function HomeScreen() {
   };
 
   const completeOrder = async () => {
+    if (orderLines.length === 0) {
+      return;
+    }
     await addBill(draft);
     setDraft({});
   };
 
   const clearOrder = () => {
+    setUndoClearSnapshot(draft);
+    setUndoClearVisible(true);
     setDraft({});
     setConfirmClearOpen(false);
+  };
+
+  const restoreClearedOrder = () => {
+    if (undoClearSnapshot) {
+      setDraft(undoClearSnapshot);
+    }
+    setUndoClearVisible(false);
+    setUndoClearSnapshot(null);
+  };
+
+  useEffect(() => {
+    let mounted = true;
+    const hydrateOnboarding = async () => {
+      const seen = await AsyncStorage.getItem(ONBOARDING_SEEN_KEY);
+      if (mounted && seen !== '1') {
+        setShowOnboarding(true);
+      }
+    };
+    void hydrateOnboarding();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const closeOnboarding = async () => {
+    setShowOnboarding(false);
+    await AsyncStorage.setItem(ONBOARDING_SEEN_KEY, '1');
   };
 
   const onCatalogLayout = (event: LayoutChangeEvent) => {
@@ -111,41 +179,114 @@ export default function HomeScreen() {
   };
 
   return (
-    <View style={[styles.screen, { backgroundColor: theme.colors.background }]}>
+    <View style={[styles.screen, isSmallScreen && styles.screenSmall, { backgroundColor: theme.colors.background }]}>
       <View style={styles.glowTop} />
-      <View style={styles.headerRow}>
+      <View style={[styles.headerRow, isNarrowHeader && styles.headerRowNarrow]}>
         <View>
-          <Text variant="headlineMedium" style={styles.title}>
+          <Text variant={isSmallScreen ? 'titleLarge' : 'headlineMedium'} style={styles.title}>
             Kassensystem
           </Text>
+          <View style={styles.daySwitchRow}>
+            {([1, 2, 3] as DayId[]).map((day) => (
+              <Pressable
+                key={day}
+                onPress={() => {
+                  void setSelectedDay(day);
+                }}
+                style={[
+                  styles.daySwitchChip,
+                  selectedDay === day
+                    ? { backgroundColor: theme.colors.primary }
+                    : { backgroundColor: theme.colors.surfaceVariant },
+                ]}
+              >
+                <Text
+                  variant="labelMedium"
+                  style={{ color: selectedDay === day ? theme.colors.onPrimary : theme.colors.onSurface }}
+                >
+                  Tag {day}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
         </View>
-        <Button mode="contained-tonal" onPress={() => router.push('/buttonView')}>
-          Produkte verwalten
-        </Button>
+        <View style={styles.headerActions}>
+          <Button
+            compact={isNarrowHeader}
+            mode="contained-tonal"
+            style={isNarrowHeader ? styles.manageButtonNarrow : undefined}
+            onPress={() => router.push('/buttonView')}
+          >
+            Produkte verwalten
+          </Button>
+          <IconButton
+            icon="help-circle-outline"
+            mode="contained-tonal"
+            size={18}
+            onPress={() => setShowOnboarding(true)}
+          />
+        </View>
       </View>
 
       <View style={[styles.mainArea, isCompactLayout && styles.mainAreaCompact]}>
         <View
-          style={[styles.catalogColumn, isCompactLayout && styles.catalogColumnCompact]}
+          style={[
+            styles.catalogColumn,
+            isCompactLayout && styles.catalogColumnCompact,
+          ]}
           onLayout={onCatalogLayout}
         >
+          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 6 }}>
+            Ausgegraute Produkte sind am gewählten Tag nicht verfügbar.
+          </Text>
+          <TextInput
+            mode="outlined"
+            dense
+            placeholder="Produkte suchen..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            blurOnSubmit
+            returnKeyType="done"
+            onSubmitEditing={Keyboard.dismiss}
+            onBlur={Keyboard.dismiss}
+            style={styles.searchInput}
+            right={searchQuery ? <TextInput.Icon icon="close" onPress={() => setSearchQuery('')} /> : undefined}
+          />
           <FlatList
             data={visibleProducts}
             keyExtractor={(item) => item.id.toString()}
             numColumns={gridColumns}
             key={`grid-${gridColumns}`}
             contentContainerStyle={styles.catalogContent}
+            keyboardShouldPersistTaps="handled"
+            onScrollBeginDrag={Keyboard.dismiss}
             columnWrapperStyle={gridColumns === 1 ? undefined : styles.catalogRow}
             renderItem={({ item }) => (
+              (() => {
+                const isAvailableToday = item.availableDays.includes(selectedDay);
+                return (
               <Pressable
                 style={[
                   styles.productPressable,
                   gridColumns === 1 ? styles.productPressableCompact : styles.productPressableGrid,
                   cardWidth ? { width: cardWidth } : undefined,
                 ]}
-                onPress={() => changeAmount(item, 1)}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  if (isAvailableToday) {
+                    changeAmount(item, 1);
+                  }
+                }}
+                disabled={!isAvailableToday}
               >
-                <Card style={[styles.productCard, ultraCompactCard && styles.productCardUltraCompact, { backgroundColor: theme.colors.surface }]}>
+                <Card
+                  style={[
+                    styles.productCard,
+                    ultraCompactCard && styles.productCardUltraCompact,
+                    { backgroundColor: theme.colors.surface },
+                    !isAvailableToday && styles.unavailableCard,
+                  ]}
+                >
                   <Card.Content>
                     <View style={styles.imageWrap}>
                       <Image
@@ -160,17 +301,25 @@ export default function HomeScreen() {
                         ]}
                       />
                     </View>
-                    <Text numberOfLines={1} variant={ultraCompactCard ? 'titleSmall' : 'titleMedium'} style={styles.productName}>
+                    <Text
+                      numberOfLines={1}
+                      variant={ultraCompactCard ? 'titleSmall' : 'titleMedium'}
+                      style={[styles.productName, !isAvailableToday && styles.unavailableText]}
+                    >
                       {item.name}
                     </Text>
                     <View style={styles.priceRow}>
-                      <Text variant={ultraCompactCard ? 'titleSmall' : 'titleMedium'} style={{ color: theme.colors.primary }}>
+                      <Text
+                        variant={ultraCompactCard ? 'titleSmall' : 'titleMedium'}
+                        style={{ color: isAvailableToday ? theme.colors.primary : theme.colors.onSurfaceVariant }}
+                      >
                         {formatEuro(item.price)}
                       </Text>
                       <View style={styles.amountControls}>
                         <Button
                           compact
                           mode="contained-tonal"
+                          disabled={!isAvailableToday || (draft[item.id] ?? 0) === 0}
                           onPress={() => changeAmount(item, -1)}
                           style={styles.minusButton}
                         >
@@ -184,6 +333,8 @@ export default function HomeScreen() {
                   </Card.Content>
                 </Card>
               </Pressable>
+                );
+              })()
             )}
             ListEmptyComponent={
               <Surface style={[styles.emptyState, { backgroundColor: theme.colors.surfaceVariant }]}> 
@@ -196,69 +347,182 @@ export default function HomeScreen() {
           />
         </View>
 
-        <Surface style={[styles.sidePanel, isCompactLayout && styles.sidePanelCompact, { backgroundColor: theme.colors.surface }]}> 
-          <Text variant="titleLarge">Aktuelle Bestellung</Text>
-          <Divider style={styles.divider} />
+        {!isCompactLayout ? (
+          <Surface style={[styles.sidePanel, { backgroundColor: theme.colors.surface }]}>
+            <Text variant={isSmallScreen ? 'titleMedium' : 'titleLarge'}>Aktuelle Bestellung</Text>
+            <Divider style={styles.divider} />
 
-          <View style={styles.orderLines}>
-            {orderLines.length === 0 ? (
-              <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
-                Keine Artikel ausgewählt.
-              </Text>
-            ) : (
-              <ScrollView contentContainerStyle={styles.orderListContent} showsVerticalScrollIndicator={false}>
-                {orderLines.map(({ product, amount }) => (
-                  <Surface key={product.id} style={[styles.orderItemCard, { backgroundColor: theme.colors.surfaceVariant }]}>
-                    <View style={styles.orderRowTop}>
-                      <Surface style={[styles.qtyBadge, { backgroundColor: theme.colors.primary }]}>
-                        <Text variant="labelMedium" style={{ color: theme.colors.onPrimary }}>
-                          {amount}
+            <View style={styles.orderLines}>
+              {orderLines.length === 0 ? (
+                <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+                  Keine Artikel ausgewählt.
+                </Text>
+              ) : (
+                <ScrollView contentContainerStyle={styles.orderListContent} showsVerticalScrollIndicator={false}>
+                  {orderLines.map(({ product, amount }) => (
+                    <Surface key={product.id} style={[styles.orderItemCard, { backgroundColor: theme.colors.surfaceVariant }]}>
+                      <View style={styles.orderRowTop}>
+                        <Surface style={[styles.qtyBadge, { backgroundColor: theme.colors.primary }]}>
+                          <Text variant="labelMedium" style={{ color: theme.colors.onPrimary }}>
+                            {amount}
+                          </Text>
+                        </Surface>
+                        <Text variant={isSmallScreen ? 'bodyMedium' : 'titleSmall'} style={styles.orderProductName} numberOfLines={1}>
+                          {product.name}
                         </Text>
-                      </Surface>
-                      <Text variant="titleSmall" style={styles.orderProductName} numberOfLines={2}>
-                        {product.name}
-                      </Text>
-                      <Text variant="titleSmall" style={styles.orderLineTotal}>
-                        {formatEuro(amount * product.price)}
-                      </Text>
-                    </View>
-                    <View style={styles.orderRowBottom}>
-                      <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                        Einzelpreis
-                      </Text>
-                      <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                        {formatEuro(product.price)}
-                      </Text>
-                    </View>
-                  </Surface>
-                ))}
-              </ScrollView>
-            )}
-          </View>
+                        <Text variant={isSmallScreen ? 'bodyMedium' : 'titleSmall'} style={styles.orderLineTotal}>
+                          {formatEuro(amount * product.price)}
+                        </Text>
+                      </View>
+                      <View style={styles.orderRowBottom}>
+                        <View style={styles.orderUnitPriceWrap}>
+                          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                            Einzelpreis
+                          </Text>
+                          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                            {formatEuro(product.price)}
+                          </Text>
+                        </View>
+                        <View style={styles.orderInlineActions}>
+                          <IconButton
+                            icon="minus"
+                            size={14}
+                            mode="contained-tonal"
+                            onPress={() => changeAmount(product, -1)}
+                          />
+                          <IconButton
+                            icon="plus"
+                            size={14}
+                            mode="contained-tonal"
+                            onPress={() => changeAmount(product, 1)}
+                          />
+                        </View>
+                      </View>
+                    </Surface>
+                  ))}
+                </ScrollView>
+              )}
+            </View>
 
-          <Divider style={styles.divider} />
-          <View style={styles.totalRow}>
-            <Text variant="titleMedium">Gesamt</Text>
-            <Text variant="headlineSmall" style={{ color: theme.colors.primary }}>
-              {formatEuro(total)}
-            </Text>
-          </View>
+            <Divider style={styles.divider} />
+            <View style={styles.totalRow}>
+              <Text variant="titleMedium">Gesamt</Text>
+              <Text variant="headlineSmall" style={{ color: theme.colors.primary }}>
+                {formatEuro(total)}
+              </Text>
+            </View>
 
-          <Button mode="contained" onPress={completeOrder} disabled={orderLines.length === 0}>
-            Bestellung abschließen
-          </Button>
-          <Button
-            mode="contained-tonal"
-            buttonColor={palette.danger}
-            onPress={() => setConfirmClearOpen(true)}
-            textColor="#2d0c0c"
-            style={styles.actionSpacing}
-            disabled={orderLines.length === 0}
-          >
-            Bestellung leeren
-          </Button>
-        </Surface>
+            <Button mode="contained" compact style={isSmallScreen ? styles.bottomActionButtonSmall : undefined} onPress={completeOrder} disabled={orderLines.length === 0}>
+              Bestellung abschließen
+            </Button>
+            <Button
+              mode="contained-tonal"
+              compact
+              buttonColor={palette.danger}
+              onPress={() => setConfirmClearOpen(true)}
+              textColor="#2d0c0c"
+              style={[styles.actionSpacing, isSmallScreen && styles.bottomActionButtonSmall]}
+              disabled={orderLines.length === 0}
+            >
+              Bestellung leeren
+            </Button>
+          </Surface>
+        ) : null}
       </View>
+
+      {isCompactLayout ? (
+        <>
+          <Portal>
+            <Modal
+              visible={orderModalOpen}
+              onDismiss={() => setOrderModalOpen(false)}
+              contentContainerStyle={[
+                styles.orderModalWrap,
+                { backgroundColor: theme.colors.surface, maxHeight: Math.min(height * 0.86, 680) },
+              ]}
+            >
+              <Text variant="titleLarge">Aktuelle Bestellung</Text>
+              <Divider style={styles.divider} />
+              <View style={[styles.orderModalListArea, { maxHeight: Math.min(height * 0.52, 380) }]}>
+                {orderLines.length === 0 ? (
+                  <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+                    Keine Artikel ausgewählt.
+                  </Text>
+                ) : (
+                  <ScrollView contentContainerStyle={styles.orderListContent} showsVerticalScrollIndicator={false}>
+                    {orderLines.map(({ product, amount }) => (
+                      <Surface key={product.id} style={[styles.orderItemCard, { backgroundColor: theme.colors.surfaceVariant }]}>
+                        <View style={styles.orderRowTop}>
+                          <Surface style={[styles.qtyBadge, { backgroundColor: theme.colors.primary }]}>
+                            <Text variant="labelMedium" style={{ color: theme.colors.onPrimary }}>
+                              {amount}
+                            </Text>
+                          </Surface>
+                          <Text variant="bodyMedium" style={styles.orderProductName} numberOfLines={1}>
+                            {product.name}
+                          </Text>
+                          <Text variant="bodyMedium" style={styles.orderLineTotal}>
+                            {formatEuro(amount * product.price)}
+                          </Text>
+                        </View>
+                        <View style={styles.orderRowBottom}>
+                          <View style={styles.orderUnitPriceWrap}>
+                            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                              Einzelpreis
+                            </Text>
+                            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                              {formatEuro(product.price)}
+                            </Text>
+                          </View>
+                          <View style={styles.orderInlineActions}>
+                            <IconButton icon="minus" size={14} mode="contained-tonal" onPress={() => changeAmount(product, -1)} />
+                            <IconButton icon="plus" size={14} mode="contained-tonal" onPress={() => changeAmount(product, 1)} />
+                          </View>
+                        </View>
+                      </Surface>
+                    ))}
+                  </ScrollView>
+                )}
+              </View>
+              <Divider style={styles.divider} />
+              <View style={styles.totalRow}>
+                <Text variant="titleMedium">Gesamt</Text>
+                <Text variant="headlineSmall" style={{ color: theme.colors.primary }}>
+                  {formatEuro(total)}
+                </Text>
+              </View>
+              <Button
+                mode="contained"
+                compact
+                onPress={() => {
+                  void completeOrder();
+                  setOrderModalOpen(false);
+                }}
+                disabled={orderLines.length === 0}
+              >
+                Bestellung abschließen
+              </Button>
+              <Button
+                mode="contained-tonal"
+                compact
+                buttonColor={palette.danger}
+                onPress={() => setConfirmClearOpen(true)}
+                textColor="#2d0c0c"
+                style={styles.actionSpacing}
+                disabled={orderLines.length === 0}
+              >
+                Bestellung leeren
+              </Button>
+            </Modal>
+          </Portal>
+
+          <View style={styles.compactOrderFabWrap}>
+            <Button mode="contained" icon="receipt-text" onPress={() => setOrderModalOpen(true)}>
+              Bestellung ({orderLines.length}) · {formatEuro(total)}
+            </Button>
+          </View>
+        </>
+      ) : null}
 
       <ConfirmModal
         visible={confirmClearOpen}
@@ -269,6 +533,37 @@ export default function HomeScreen() {
         onCancel={() => setConfirmClearOpen(false)}
         onConfirm={clearOrder}
       />
+
+      <Portal>
+        <Modal
+          visible={showOnboarding}
+          onDismiss={() => void closeOnboarding()}
+          contentContainerStyle={[styles.onboardingModal, { backgroundColor: theme.colors.surface }]}
+        >
+          <Text variant="titleLarge" style={styles.title}>Hinweise zur Nutzung</Text>
+          <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+            Tippe auf ein Produkt, um es zur aktuellen Bestellung hinzuzufügen.
+          </Text>
+          <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+            Auf kleineren Displays öffnet „Bestellung (...)“ die kompakte Bestellansicht.
+          </Text>
+          <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+            Statistiken und Exportfunktionen findest du im Tab „Statistik“.
+          </Text>
+          <Button mode="contained" onPress={() => void closeOnboarding()}>
+            Schließen
+          </Button>
+        </Modal>
+      </Portal>
+
+      <Snackbar
+        visible={undoClearVisible}
+        onDismiss={() => setUndoClearVisible(false)}
+        duration={5000}
+        action={{ label: 'Rückgängig', onPress: restoreClearedOrder }}
+      >
+        Bestellung geleert
+      </Snackbar>
     </View>
   );
 }
@@ -278,6 +573,10 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingTop: 44,
     paddingHorizontal: 20,
+  },
+  screenSmall: {
+    paddingHorizontal: 12,
+    paddingTop: 36,
   },
   glowTop: {
     position: 'absolute',
@@ -295,13 +594,38 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     gap: 12,
   },
+  headerRowNarrow: {
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    gap: 2,
+  },
+  manageButtonNarrow: {
+    alignSelf: 'flex-start',
+  },
   title: {
     fontWeight: '700',
+  },
+  daySwitchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+  },
+  daySwitchChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
   },
   mainArea: {
     flex: 1,
     flexDirection: 'row',
     gap: 16,
+    alignItems: 'stretch',
   },
   mainAreaCompact: {
     flexDirection: 'column',
@@ -315,6 +639,9 @@ const styles = StyleSheet.create({
   catalogContent: {
     paddingBottom: 8,
     gap: 8,
+  },
+  searchInput: {
+    marginBottom: 8,
   },
   catalogRow: {
     gap: 8,
@@ -330,6 +657,9 @@ const styles = StyleSheet.create({
   },
   productCard: {
     borderRadius: 16,
+  },
+  unavailableCard: {
+    opacity: 0.55,
   },
   productCardUltraCompact: {
     borderRadius: 12,
@@ -356,6 +686,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: 6,
   },
+  unavailableText: {
+    textDecorationLine: 'line-through',
+  },
   priceRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -378,20 +711,23 @@ const styles = StyleSheet.create({
   },
   sidePanel: {
     flex: 0.85,
+    height: '100%',
     borderRadius: 18,
     padding: 12,
   },
   sidePanelCompact: {
-    flex: 0,
-    marginTop: 6,
-    marginBottom: 6,
+    flex: 1,
+    minHeight: 360,
+    marginTop: 2,
+    marginBottom: 2,
   },
   divider: {
-    marginVertical: 8,
+    marginVertical: 6,
   },
   orderLines: {
-    flex: 3.8,
-    minHeight: 520,
+    flex: 1.45,
+    flexGrow: 1,
+    minHeight: 220,
   },
   orderListContent: {
     gap: 8,
@@ -399,26 +735,36 @@ const styles = StyleSheet.create({
   },
   orderItemCard: {
     borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   orderRowTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    gap: 8,
+    gap: 6,
   },
   orderRowBottom: {
     marginTop: 2,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 10,
+  },
+  orderUnitPriceWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  orderInlineActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
   },
   qtyBadge: {
     minWidth: 24,
     borderRadius: 999,
-    paddingHorizontal: 7,
-    paddingVertical: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 0,
     alignItems: 'center',
   },
   orderProductName: {
@@ -431,15 +777,39 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'baseline',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   actionSpacing: {
-    marginTop: 6,
+    marginTop: 2,
+  },
+  bottomActionButtonSmall: {
+    minHeight: 44,
   },
   emptyState: {
     borderRadius: 16,
     padding: 18,
     alignItems: 'center',
     gap: 6,
+  },
+  orderModalWrap: {
+    marginHorizontal: 12,
+    borderRadius: 16,
+    padding: 12,
+    gap: 4,
+  },
+  orderModalListArea: {
+    minHeight: 120,
+  },
+  compactOrderFabWrap: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    bottom: 12,
+  },
+  onboardingModal: {
+    marginHorizontal: 16,
+    borderRadius: 14,
+    padding: 14,
+    gap: 10,
   },
 });

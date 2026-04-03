@@ -1,7 +1,7 @@
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Alert, Image, StyleSheet, View } from 'react-native';
+import { Alert, Image, StyleSheet, View, useWindowDimensions } from 'react-native';
 import {
   Button,
   Card,
@@ -13,13 +13,12 @@ import {
   TextInput,
   useTheme,
 } from 'react-native-paper';
-import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import DragList, { type DragListRenderItemInfo } from 'react-native-draglist';
 
-import { useAppData } from '@/app/store/AppDataContext';
-import type { DayId, Product } from '@/app/store/types';
-import { formatEuro } from '@/app/utils/format';
-import { getProductImageSource } from '@/app/utils/productImages';
+import { useAppData } from '@/src/store/AppDataContext';
+import type { DayId, Product } from '@/src/store/types';
+import { formatEuro } from '@/src/utils/format';
+import { getProductImageSource } from '@/src/utils/productImages';
 const ALL_DAYS: DayId[] = [1, 2, 3];
 
 type FormState = {
@@ -32,6 +31,8 @@ const EMPTY_FORM: FormState = { name: '', price: '', availableDays: [...ALL_DAYS
 
 export default function ProductManagementScreen() {
   const theme = useTheme();
+  const { width } = useWindowDimensions();
+  const isNarrow = width < 860;
   const {
     products,
     upsertProduct,
@@ -45,6 +46,7 @@ export default function ProductManagementScreen() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [isSaving, setIsSaving] = useState(false);
 
   const sortedProducts = useMemo(
     () => [...products].sort((a, b) => a.sortOrder - b.sortOrder),
@@ -96,19 +98,27 @@ export default function ProductManagementScreen() {
 
   const saveEditor = async () => {
     const numericPrice = Number(form.price.replace(',', '.'));
+    if (!form.name.trim() || Number.isNaN(numericPrice) || numericPrice < 0 || form.availableDays.length === 0) {
+      return;
+    }
 
-    await upsertProduct(
-      {
-        name: form.name,
-        price: numericPrice,
-        availableDays: form.availableDays,
-      },
-      editingProduct?.id,
-    );
+    setIsSaving(true);
+    try {
+      await upsertProduct(
+        {
+          name: form.name,
+          price: numericPrice,
+          availableDays: form.availableDays,
+        },
+        editingProduct?.id,
+      );
 
-    setEditorOpen(false);
-    setForm(EMPTY_FORM);
-    setEditingProduct(null);
+      setEditorOpen(false);
+      setForm(EMPTY_FORM);
+      setEditingProduct(null);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const pickImage = async (product: Product) => {
@@ -123,17 +133,130 @@ export default function ProductManagementScreen() {
     }
   };
 
+  const reorderByIndex = async (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) {
+      return;
+    }
+
+    const ids = sortedProducts.map((entry) => entry.id);
+    if (
+      fromIndex < 0 ||
+      fromIndex >= ids.length ||
+      toIndex < 0 ||
+      toIndex >= ids.length
+    ) {
+      return;
+    }
+
+    const nextIds = [...ids];
+    const [movedId] = nextIds.splice(fromIndex, 1);
+    if (movedId === undefined) {
+      return;
+    }
+    nextIds.splice(toIndex, 0, movedId);
+
+    await reorderProducts(nextIds);
+  };
+
+  const renderProductCard = ({ item, onDragStart, onDragEnd, isActive }: DragListRenderItemInfo<Product>) => {
+    return (
+      <Card
+        style={[
+          styles.productCard,
+          { backgroundColor: theme.colors.surface },
+          isActive ? styles.dragActiveCard : undefined,
+        ]}
+      >
+        <Card.Content>
+          <View style={[styles.productRow, isNarrow && styles.productRowNarrow]}>
+            <Image source={getProductImageSource(item)} style={styles.image} />
+            <View style={styles.metaCol}>
+              <Text variant="titleMedium" style={styles.productName}>{item.name}</Text>
+              <Text variant="bodyLarge" style={{ color: theme.colors.primary }}>
+                {formatEuro(item.price)}
+              </Text>
+
+              <View style={styles.dayChipWrap}>
+                {ALL_DAYS.map((day) => {
+                  const selected = item.availableDays.includes(day);
+                  return (
+                    <Chip
+                      key={`${item.id}-${day}`}
+                      compact
+                      selected={selected}
+                      showSelectedCheck={false}
+                      onPress={() => {
+                        void toggleProductDay(item, day);
+                      }}
+                      style={{ backgroundColor: selected ? theme.colors.secondary : theme.colors.surfaceVariant }}
+                      textStyle={{ color: selected ? theme.colors.onSecondary : theme.colors.onSurface }}
+                    >
+                      T{day}
+                    </Chip>
+                  );
+                })}
+              </View>
+
+              <View style={styles.switchRow}>
+                <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+                  In Statistik anzeigen
+                </Text>
+                <Switch
+                  value={item.includeInStats}
+                  onValueChange={() => {
+                    void toggleProductStats(item.id);
+                  }}
+                />
+              </View>
+            </View>
+            <View style={[styles.actionsCol, isNarrow && styles.actionsRowNarrow]}>
+              <IconButton
+                icon="drag"
+                mode="contained-tonal"
+                onLongPress={onDragStart}
+                onPressOut={onDragEnd}
+              />
+              <IconButton icon="pencil" mode="contained-tonal" onPress={() => openEdit(item)} />
+              <IconButton icon="camera" mode="contained-tonal" onPress={() => void pickImage(item)} />
+              <IconButton
+                icon="trash-can-outline"
+                mode="contained-tonal"
+                iconColor={theme.colors.error}
+                onPress={() => {
+                  Alert.alert(
+                    'Produkt löschen?',
+                    `${item.name} wird aus der Liste und aus allen gespeicherten Bestellungen entfernt.`,
+                    [
+                      { text: 'Abbrechen', style: 'cancel' },
+                      {
+                        text: 'Löschen',
+                        style: 'destructive',
+                        onPress: () => {
+                          void removeProduct(item.id);
+                        },
+                      },
+                    ],
+                  );
+                }}
+              />
+            </View>
+          </View>
+        </Card.Content>
+      </Card>
+    );
+  };
+
   return (
     <View style={[styles.screen, { backgroundColor: theme.colors.background }]}>
       <View style={styles.glowTop} />
-      <View style={styles.headerRow}>
+      <View style={[styles.headerRow, isNarrow && styles.headerRowNarrow]}>
         <View>
           <Text variant="headlineMedium" style={styles.title}>Produkte</Text>
           <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
             Preise, Bilder, Tage und Statistik-Relevanz verwalten
           </Text>
         </View>
-        <View style={styles.headerActions}>
+        <View style={[styles.headerActions, isNarrow && styles.headerActionsNarrow]}>
           <Button mode="contained" onPress={openCreate}>Neues Produkt</Button>
           <Button
             mode="contained-tonal"
@@ -191,122 +314,54 @@ export default function ProductManagementScreen() {
               </View>
             </View>
             <View style={styles.editorActions}>
-              <Button onPress={() => setEditorOpen(false)}>Abbrechen</Button>
-              <Button mode="contained" onPress={() => void saveEditor()}>Speichern</Button>
+              <Button onPress={() => setEditorOpen(false)} disabled={isSaving}>Abbrechen</Button>
+              <Button
+                mode="contained"
+                loading={isSaving}
+                disabled={
+                  isSaving ||
+                  !form.name.trim() ||
+                  Number.isNaN(Number(form.price.replace(',', '.'))) ||
+                  Number(form.price.replace(',', '.')) < 0 ||
+                  form.availableDays.length === 0
+                }
+                onPress={() => void saveEditor()}
+              >
+                Speichern
+              </Button>
             </View>
           </Card.Content>
         </Card>
       ) : null}
 
       <Divider style={styles.listDivider} />
+      <Text variant="bodySmall" style={[styles.dragHint, { color: theme.colors.onSurfaceVariant }]}>
+        Reihenfolge ändern: Produkt am Griffsymbol gedrückt halten und ziehen.
+      </Text>
 
-      <GestureHandlerRootView style={styles.listRoot}>
-        <DraggableFlatList
+      {sortedProducts.length > 0 ? (
+        <DragList
           data={sortedProducts}
-          keyExtractor={(item) => item.id.toString()}
-          contentContainerStyle={styles.content}
-          onDragEnd={({ data }) => {
-            void reorderProducts(data.map((item) => item.id));
+          keyExtractor={(item) => String(item.id)}
+          renderItem={renderProductCard}
+          onReordered={(fromIndex, toIndex) => {
+            void reorderByIndex(fromIndex, toIndex);
           }}
-          activationDistance={8}
-          renderItem={({ item, drag, isActive }: RenderItemParams<Product>) => (
-            <Card
-              key={item.id}
-              style={[
-                styles.productCard,
-                { backgroundColor: theme.colors.surface },
-                isActive ? styles.dragActiveCard : undefined,
-              ]}
-            >
-              <Card.Content>
-                <View style={styles.productRow}>
-                  <Image source={getProductImageSource(item)} style={styles.image} />
-                  <View style={styles.metaCol}>
-                    <Text variant="titleMedium" style={styles.productName}>{item.name}</Text>
-                    <Text variant="bodyLarge" style={{ color: theme.colors.primary }}>
-                      {formatEuro(item.price)}
-                    </Text>
-
-                    <View style={styles.dayChipWrap}>
-                      {ALL_DAYS.map((day) => {
-                        const selected = item.availableDays.includes(day);
-                        return (
-                          <Chip
-                            key={`${item.id}-${day}`}
-                            compact
-                            selected={selected}
-                            showSelectedCheck={false}
-                            onPress={() => {
-                              void toggleProductDay(item, day);
-                            }}
-                            style={{ backgroundColor: selected ? theme.colors.secondary : theme.colors.surfaceVariant }}
-                            textStyle={{ color: selected ? theme.colors.onSecondary : theme.colors.onSurface }}
-                          >
-                            T{day}
-                          </Chip>
-                        );
-                      })}
-                    </View>
-
-                    <View style={styles.switchRow}>
-                      <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
-                        In Statistik anzeigen
-                      </Text>
-                      <Switch
-                        value={item.includeInStats}
-                        onValueChange={() => {
-                          void toggleProductStats(item.id);
-                        }}
-                      />
-                    </View>
-                  </View>
-                  <View style={styles.actionsCol}>
-                    <IconButton
-                      icon="drag"
-                      mode="contained-tonal"
-                      onLongPress={drag}
-                      onPressIn={drag}
-                    />
-                    <IconButton icon="pencil" mode="contained-tonal" onPress={() => openEdit(item)} />
-                    <IconButton icon="camera" mode="contained-tonal" onPress={() => void pickImage(item)} />
-                    <IconButton
-                      icon="trash-can-outline"
-                      mode="contained-tonal"
-                      iconColor={theme.colors.error}
-                      onPress={() => {
-                        Alert.alert(
-                          'Produkt löschen?',
-                          `${item.name} wird aus der Liste und aus allen gespeicherten Bestellungen entfernt.`,
-                          [
-                            { text: 'Abbrechen', style: 'cancel' },
-                            {
-                              text: 'Löschen',
-                              style: 'destructive',
-                              onPress: () => {
-                                void removeProduct(item.id);
-                              },
-                            },
-                          ],
-                        );
-                      }}
-                    />
-                  </View>
-                </View>
-              </Card.Content>
-            </Card>
-          )}
-          ListEmptyComponent={
-            <Card style={[styles.emptyCard, { backgroundColor: theme.colors.surfaceVariant }]}>
-              <Card.Content>
-                <Text variant="titleMedium">Noch keine Produkte vorhanden</Text>
-                <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
-                  Lege dein erstes Produkt über „Neues Produkt“ an.
-                </Text>
-              </Card.Content>
-            </Card>
-          }
+          containerStyle={styles.listContainer}
+          contentContainerStyle={styles.content}
         />
-      </GestureHandlerRootView>
+      ) : (
+        <View style={styles.content}>
+          <Card style={[styles.emptyCard, { backgroundColor: theme.colors.surfaceVariant }]}>
+            <Card.Content>
+              <Text variant="titleMedium">Noch keine Produkte vorhanden</Text>
+              <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+                Lege dein erstes Produkt über „Neues Produkt“ an.
+              </Text>
+            </Card.Content>
+          </Card>
+        </View>
+      )}
 
     </View>
   );
@@ -334,9 +389,16 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 12,
   },
+  headerRowNarrow: {
+    alignItems: 'flex-start',
+    flexWrap: 'wrap',
+  },
   headerActions: {
     flexDirection: 'row',
     gap: 8,
+  },
+  headerActionsNarrow: {
+    flexWrap: 'wrap',
   },
   title: {
     fontWeight: '700',
@@ -345,11 +407,14 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
     gap: 10,
   },
-  listRoot: {
+  listContainer: {
     flex: 1,
   },
   listDivider: {
-    marginBottom: 10,
+    marginBottom: 6,
+  },
+  dragHint: {
+    marginBottom: 8,
   },
   editorCard: {
     borderRadius: 14,
@@ -379,6 +444,9 @@ const styles = StyleSheet.create({
     gap: 12,
     alignItems: 'center',
   },
+  productRowNarrow: {
+    alignItems: 'flex-start',
+  },
   image: {
     width: 84,
     height: 84,
@@ -401,6 +469,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 2,
+  },
+  actionsRowNarrow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 0,
+    width: 120,
   },
   emptyCard: {
     borderRadius: 14,

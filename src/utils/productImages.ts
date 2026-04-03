@@ -1,6 +1,6 @@
 import type { ImageSourcePropType } from 'react-native';
 
-import type { Product } from '@/app/store/types';
+import type { Product } from '@/src/store/types';
 
 const DEFAULT_IMAGES: ImageSourcePropType[] = [
   require('../../assets/images/currywurst.jpg'),
@@ -11,9 +11,9 @@ const DEFAULT_IMAGES: ImageSourcePropType[] = [
 ];
 
 const NAME_HINTS: { pattern: RegExp; image: ImageSourcePropType }[] = [
-  { pattern: /curry|wurst/i, image: require('../../assets/images/currywurst.jpg') },
-  { pattern: /pommes|fries/i, image: require('../../assets/images/pommes.jpg') },
   { pattern: /brat/i, image: require('../../assets/images/bratwurst.jpg') },
+  { pattern: /curry/i, image: require('../../assets/images/currywurst.jpg') },
+  { pattern: /pommes|fries/i, image: require('../../assets/images/pommes.jpg') },
   { pattern: /lahmacun|türk/i, image: require('../../assets/images/lahmacun.jpg') },
   { pattern: /schasch|spieß/i, image: require('../../assets/images/schaschlik.jpg') },
 ];
