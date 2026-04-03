@@ -29,6 +29,8 @@ type AppDataContextType = {
   products: Product[];
   dayDefinitions: DayDefinition[];
   selectedDay: DayId;
+  todayResolvedDay: DayId | null;
+  hasTodayConfiguredDay: boolean;
   themeMode: ThemeMode;
   bills: BillRecord[];
   billsByDay: StatsByDay;
@@ -71,6 +73,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const [selectedDay, setSelectedDayState] = useState<DayId>(1);
   const [themeMode, setThemeModeState] = useState<ThemeMode>('light');
   const [statsByDay, setStatsByDay] = useState<StatsByDay>(DEFAULT_STATS);
+  const todayResolvedDay = useMemo(() => resolveDayFromDate(dayDefinitions, new Date()), [dayDefinitions]);
 
   useEffect(() => {
     let mounted = true;
@@ -371,6 +374,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     products,
     dayDefinitions,
     selectedDay,
+    todayResolvedDay,
+    hasTodayConfiguredDay: todayResolvedDay !== null,
     themeMode,
     bills: statsByDay[selectedDay] ?? [],
     billsByDay: statsByDay,
@@ -394,6 +399,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     isReady,
     products,
     dayDefinitions,
+    todayResolvedDay,
     removeBill,
     removeProduct,
     resetDayStats,

@@ -198,7 +198,10 @@ export async function saveDayDefinitions(dayDefinitions: DayDefinition[]): Promi
 }
 
 export function resolveDayFromDate(dayDefinitions: DayDefinition[], date: Date): DayId | null {
-  const isoDate = date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const isoDate = `${year}-${month}-${day}`;
   const match = dayDefinitions.find((entry) => entry.dates.includes(isoDate));
   return match?.id ?? null;
 }

@@ -42,7 +42,7 @@ export default function HomeScreen() {
   const isSmallScreen = width < 560;
   const isTabletWide = width >= 820;
 
-  const { products, dayDefinitions, addBill, selectedDay } = useAppData();
+  const { products, dayDefinitions, addBill, selectedDay, hasTodayConfiguredDay } = useAppData();
 
   const [draft, setDraft] = useState<BillItems>({});
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
@@ -51,6 +51,7 @@ export default function HomeScreen() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [undoClearSnapshot, setUndoClearSnapshot] = useState<BillItems | null>(null);
   const [undoClearVisible, setUndoClearVisible] = useState(false);
+  const [saveBlockedVisible, setSaveBlockedVisible] = useState(false);
   const [catalogWidth, setCatalogWidth] = useState(0);
 
   const visibleProducts = useMemo(() => {
@@ -136,6 +137,10 @@ export default function HomeScreen() {
     if (orderLines.length === 0) {
       return;
     }
+    if (!hasTodayConfiguredDay) {
+      setSaveBlockedVisible(true);
+      return;
+    }
     await addBill(draft);
     setDraft({});
   };
@@ -189,6 +194,11 @@ export default function HomeScreen() {
           <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 4 }}>
             Aktueller Tag: {dayDefinitions.find((entry) => entry.id === selectedDay)?.label ?? `Tag ${selectedDay}`}
           </Text>
+          {!hasTodayConfiguredDay ? (
+            <Text variant="bodySmall" style={{ color: theme.colors.error, marginTop: 2 }}>
+              Für das heutige Datum ist kein Tag hinterlegt. Bestellung kann nicht gespeichert werden.
+            </Text>
+          ) : null}
         </View>
         <View style={styles.headerActions}>
           <Button
@@ -545,6 +555,13 @@ export default function HomeScreen() {
         action={{ label: 'Rückgängig', onPress: restoreClearedOrder }}
       >
         Bestellung geleert
+      </Snackbar>
+      <Snackbar
+        visible={saveBlockedVisible}
+        onDismiss={() => setSaveBlockedVisible(false)}
+        duration={3200}
+      >
+        Kein Tag für heute hinterlegt. Bitte zuerst in Statistik unter „Tage“ ein Datum zuordnen.
       </Snackbar>
     </View>
   );

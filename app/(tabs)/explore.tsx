@@ -73,13 +73,23 @@ export default function StatsScreen() {
   const isNarrow = width < 760;
   const isVeryNarrow = width < 520;
   const isSmallScreen = width < 620;
-  const isHeaderStacked = width < 1120;
   const pieSize = width < 430 ? 150 : width < 620 ? 180 : 220;
   const hourBarWidth = width < 430 ? 14 : 18;
   const hourTrackWidth = width < 430 ? 10 : 14;
   const hourTrackHeight = width < 430 ? 118 : 142;
   const hourBarGap = 4;
-  const { products, billsByDay, dayDefinitions, selectedDay, setSelectedDay, setDayDefinitions, replaceDayStats, themeMode, toggleThemeMode } = useAppData();
+  const {
+    products,
+    billsByDay,
+    dayDefinitions,
+    selectedDay,
+    todayResolvedDay,
+    setSelectedDay,
+    setDayDefinitions,
+    replaceDayStats,
+    themeMode,
+    toggleThemeMode,
+  } = useAppData();
 
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -110,9 +120,11 @@ export default function StatsScreen() {
   const bills = useMemo(() => billsByDay[statsViewDay] ?? [], [billsByDay, statsViewDay]);
 
   useEffect(() => {
-    setStatsViewDay(selectedDay);
-    setSelectedExportDays([selectedDay]);
-  }, [selectedDay]);
+    const fallbackDay = dayDefinitions[0]?.id ?? selectedDay;
+    const displayDay = todayResolvedDay ?? fallbackDay;
+    setStatsViewDay(displayDay);
+    setSelectedExportDays([displayDay]);
+  }, [dayDefinitions, selectedDay, todayResolvedDay]);
 
   const productStats = useMemo(
     () =>
@@ -141,15 +153,19 @@ export default function StatsScreen() {
     const buckets = Array.from({ length: 24 }, (_, hour) => ({ hour, value: 0 }));
     bills.forEach((bill) => {
       const hour = new Date(bill.datetime).getHours();
+      const billTotal = Number(bill.total);
       if (hour >= 0 && hour <= 23) {
-        buckets[hour].value += bill.total;
+        buckets[hour].value += Number.isFinite(billTotal) ? billTotal : 0;
       }
     });
     return buckets;
   }, [bills]);
   const hourlyContentWidth = hourlyRevenue.length * hourBarWidth + (hourlyRevenue.length - 1) * hourBarGap;
 
-  const maxHourlyRevenue = Math.max(1, ...hourlyRevenue.map((entry) => entry.value));
+  const maxHourlyRevenue = Math.max(
+    1,
+    ...hourlyRevenue.map((entry) => (Number.isFinite(entry.value) ? entry.value : 0)),
+  );
 
   const dayTrend = useMemo(
     () =>
@@ -203,8 +219,10 @@ export default function StatsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      setStatsViewDay(selectedDay);
-      setSelectedExportDays([selectedDay]);
+      const fallbackDay = dayDefinitions[0]?.id ?? selectedDay;
+      const displayDay = todayResolvedDay ?? fallbackDay;
+      setStatsViewDay(displayDay);
+      setSelectedExportDays([displayDay]);
 
       return () => {
         setIsUnlocked(false);
@@ -212,11 +230,12 @@ export default function StatsScreen() {
         setPasscodeError(null);
         setPasscodeModalOpen(false);
       };
-    }, [selectedDay]),
+    }, [dayDefinitions, selectedDay, todayResolvedDay]),
   );
 
   const selectedHourEntry = selectedHour === null ? null : hourlyRevenue.find((entry) => entry.hour === selectedHour);
   const selectedHourShare = selectedHourEntry ? (selectedHourEntry.value * 100) / Math.max(1, totalRevenue) : 0;
+  const hourlyChartKey = `hourly-${statsViewDay}-${selectedHour ?? 'none'}-${maxHourlyRevenue}`;
 
   const switchDay = async (day: DayId) => {
     setStatsViewDay(day);
@@ -437,6 +456,17 @@ export default function StatsScreen() {
           </View>
           <View style={[styles.headerActions, isVeryNarrow && styles.headerActionsNarrow]}>
             <View style={[styles.headerActionGroup, isVeryNarrow && styles.headerActionGroupNarrow]}>
+              <Button mode="contained-tonal" compact style={isVeryNarrow ? styles.headerButtonNarrow : undefined} onPress={() => setExportOpen(true)}>
+                Export
+              </Button>
+              <Button mode="contained-tonal" compact style={isVeryNarrow ? styles.headerButtonNarrow : undefined} onPress={() => router.push('/historyView')}>
+                Bestellverlauf
+              </Button>
+              <Button mode="contained-tonal" compact style={isVeryNarrow ? styles.headerButtonNarrow : undefined} onPress={() => setMaintenanceOpen(true)}>
+                Wartungstag
+              </Button>
+            </View>
+            <View style={[styles.headerActionGroup, isVeryNarrow && styles.headerActionGroupNarrow]}>
               <Button mode="contained-tonal" compact style={isVeryNarrow ? styles.headerButtonNarrow : undefined} onPress={() => void toggleThemeMode()}>
                 {themeMode === 'light' ? 'Dark Mode' : 'Light Mode'}
               </Button>
@@ -446,20 +476,19 @@ export default function StatsScreen() {
               <Button mode="contained-tonal" compact style={isVeryNarrow ? styles.headerButtonNarrow : undefined} onPress={openDayManager}>
                 Tage
               </Button>
-              <Button mode="contained-tonal" compact style={isVeryNarrow ? styles.headerButtonNarrow : undefined} onPress={() => setMaintenanceOpen(true)}>
-                Wartungstag
-              </Button>
-            </View>
-            <View style={[styles.headerActionGroup, isVeryNarrow && styles.headerActionGroupNarrow]}>
-              <Button mode="contained-tonal" compact style={isVeryNarrow ? styles.headerButtonNarrow : undefined} onPress={() => setExportOpen(true)}>
-                Export
-              </Button>
-              <Button mode="contained-tonal" compact style={isVeryNarrow ? styles.headerButtonNarrow : undefined} onPress={() => router.push('/historyView')}>
-                Bestellverlauf
-              </Button>
             </View>
           </View>
         </View>
+        {todayResolvedDay === null ? (
+          <Card style={[styles.chartCard, { backgroundColor: theme.colors.surfaceVariant }]}>
+            <Card.Content>
+              <Text variant="titleMedium">Hinweis: Heute ist kein Tag zugeordnet</Text>
+              <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+                Die Statistik zeigt aktuell den ersten Tag aus deiner Liste an.
+              </Text>
+            </Card.Content>
+          </Card>
+        ) : null}
 
         <View style={[styles.dayRow, isVeryNarrow && styles.dayRowNarrow]}>
           {dayDefinitions.map((dayDef) => (
@@ -562,7 +591,12 @@ export default function StatsScreen() {
           <Card.Content>
             <Text variant="titleLarge" style={styles.sectionTitle}>Umsatz pro Stunde</Text>
             <Divider style={styles.sectionDivider} />
-            <ScrollView horizontal showsHorizontalScrollIndicator contentContainerStyle={styles.hourlyScrollContent}>
+            <ScrollView
+              key={hourlyChartKey}
+              horizontal
+              showsHorizontalScrollIndicator
+              contentContainerStyle={styles.hourlyScrollContent}
+            >
               <View style={[styles.hourlyWrap, { width: hourlyContentWidth, gap: hourBarGap }]}>
               {hourlyRevenue.map((entry) => (
                 <Pressable
@@ -570,12 +604,17 @@ export default function StatsScreen() {
                   onPress={() => toggleHourHighlight(entry.hour)}
                   style={[styles.hourBarCol, { width: hourBarWidth }]}
                 >
+                  {(() => {
+                    const fillHeight = entry.value > 0
+                      ? Math.max(8, Math.round((entry.value / maxHourlyRevenue) * hourTrackHeight))
+                      : 6;
+                    return (
                   <View
                     style={[
                       styles.hourBarTrack,
                       { width: hourTrackWidth, height: hourTrackHeight, borderRadius: hourTrackWidth / 2 },
                       { backgroundColor: theme.dark ? 'rgba(255,255,255,0.08)' : 'rgba(71,85,105,0.14)' },
-                      selectedHour === entry.hour && { borderColor: theme.colors.primary, borderWidth: 1.5 },
+                      selectedHour === entry.hour && { borderColor: theme.colors.primary, borderWidth: 2 },
                     ]}
                   >
                     <View
@@ -584,25 +623,19 @@ export default function StatsScreen() {
                         {
                           width: hourTrackWidth,
                           borderRadius: hourTrackWidth / 2,
-                          height: `${(entry.value / maxHourlyRevenue) * 100}%`,
-                          backgroundColor: (() => {
-                            const baseColor = entry.value > 0
-                              ? theme.colors.tertiary
-                              : theme.dark
-                                ? 'rgba(255,255,255,0.22)'
-                                : 'rgba(71,85,105,0.34)';
-                            if (selectedHour === null) {
-                              return baseColor;
-                            }
-                            if (selectedHour === entry.hour) {
-                              return theme.colors.primary;
-                            }
-                            return dimColor(baseColor, 0.28);
-                          })(),
+                          height: fillHeight,
+                          backgroundColor: entry.value > 0
+                            ? theme.colors.tertiary
+                            : theme.dark
+                              ? 'rgba(255,255,255,0.22)'
+                              : 'rgba(71,85,105,0.34)',
+                          opacity: 1,
                         },
                       ]}
                     />
                   </View>
+                    );
+                  })()}
                   <Text style={styles.hourLabel}>{entry.hour}</Text>
                 </Pressable>
               ))}
@@ -885,8 +918,8 @@ const styles = StyleSheet.create({
   lockContent: { gap: 12 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
   headerTitleWrap: { flexShrink: 1 },
-  headerActions: { flexDirection: 'row', gap: 10, alignItems: 'center', alignSelf: 'flex-end', maxWidth: '100%' },
-  headerActionGroup: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', maxWidth: '100%' },
+  headerActions: { flexDirection: 'column', gap: 6, alignItems: 'flex-end', alignSelf: 'flex-end', maxWidth: '100%' },
+  headerActionGroup: { flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'flex-end', maxWidth: '100%' },
   headerActionGroupNarrow: { width: '100%', justifyContent: 'flex-end' },
   headerRowNarrow: { flexDirection: 'column', alignItems: 'stretch', gap: 10 },
   headerActionsNarrow: { flexDirection: 'column', alignItems: 'stretch', width: '100%', alignSelf: 'stretch', gap: 8 },

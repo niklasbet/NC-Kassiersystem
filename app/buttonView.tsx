@@ -1,4 +1,5 @@
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Alert, Image, StyleSheet, View, useWindowDimensions } from 'react-native';
@@ -139,7 +140,17 @@ export default function ProductManagementScreen() {
     });
 
     if (!result.canceled) {
-      await updateProductImage(product.id, result.assets[0].uri);
+      const pickedUri = result.assets[0]?.uri;
+      if (!pickedUri) {
+        return;
+      }
+      const directory = `${FileSystem.documentDirectory}product-images`;
+      const extMatch = pickedUri.match(/\.(\w+)(?:\?|$)/);
+      const extension = extMatch?.[1] ?? 'jpg';
+      const targetUri = `${directory}/product-${product.id}-${Date.now()}.${extension}`;
+      await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
+      await FileSystem.copyAsync({ from: pickedUri, to: targetUri });
+      await updateProductImage(product.id, targetUri);
     }
   };
 
