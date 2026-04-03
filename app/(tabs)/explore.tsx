@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import PieChart from 'react-native-pie-chart';
 import {
@@ -11,15 +12,17 @@ import {
   Portal,
   Snackbar,
   Text,
+  TextInput,
   useTheme,
 } from 'react-native-paper';
 
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { useAppData } from '@/src/store/AppDataContext';
-import type { BillRecord, DayId, Product } from '@/src/store/types';
+import type { BillRecord, DayDefinition, DayId, Product } from '@/src/store/types';
 import { palette } from '@/src/theme/appTheme';
 import { formatEuro } from '@/src/utils/format';
 import { exportStatsReport, type ExportFormat, type ExportSection } from '@/src/utils/statsExport';
+import { loadStatsPasscode, saveStatsPasscode } from '@/src/store/storage';
 
 const chartPalette = ['#f6b351', '#6fd6b6', '#78a7ff', '#ef6a6a', '#cf93ff', '#62dfff', '#f2dc7f', '#84ec7b'];
 const DEFAULT_EXPORT_SECTIONS: ExportSection[] = [
@@ -53,18 +56,30 @@ function withOpacity(hexColor: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+function dimColor(color: string, alpha: number): string {
+  if (color.startsWith('#')) {
+    return withOpacity(color, alpha);
+  }
+  const rgbaMatch = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+  if (rgbaMatch) {
+    return `rgba(${rgbaMatch[1]}, ${rgbaMatch[2]}, ${rgbaMatch[3]}, ${alpha})`;
+  }
+  return color;
+}
+
 export default function StatsScreen() {
   const theme = useTheme();
   const { width } = useWindowDimensions();
   const isNarrow = width < 760;
   const isVeryNarrow = width < 520;
   const isSmallScreen = width < 620;
+  const isHeaderStacked = width < 1120;
   const pieSize = width < 430 ? 150 : width < 620 ? 180 : 220;
   const hourBarWidth = width < 430 ? 14 : 18;
   const hourTrackWidth = width < 430 ? 10 : 14;
   const hourTrackHeight = width < 430 ? 118 : 142;
   const hourBarGap = 4;
-  const { products, bills, billsByDay, selectedDay, setSelectedDay, resetDayStats, replaceDayStats, themeMode, toggleThemeMode } = useAppData();
+  const { products, billsByDay, dayDefinitions, selectedDay, setSelectedDay, setDayDefinitions, replaceDayStats, themeMode, toggleThemeMode } = useAppData();
 
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -72,11 +87,32 @@ export default function StatsScreen() {
   const [snackbarText, setSnackbarText] = useState<string | null>(null);
   const [selectedExportSections, setSelectedExportSections] = useState<ExportSection[]>(DEFAULT_EXPORT_SECTIONS);
   const [selectedExportFormat, setSelectedExportFormat] = useState<ExportFormat>('csv');
+  const [statsViewDay, setStatsViewDay] = useState<DayId>(selectedDay);
   const [selectedExportDays, setSelectedExportDays] = useState<DayId[]>([selectedDay]);
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
   const [selectedHour, setSelectedHour] = useState<number | null>(null);
   const [resetUndoBills, setResetUndoBills] = useState<BillRecord[] | null>(null);
   const [resetUndoVisible, setResetUndoVisible] = useState(false);
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [statsPasscode, setStatsPasscode] = useState('0000');
+  const [passcodeInput, setPasscodeInput] = useState('');
+  const [passcodeError, setPasscodeError] = useState<string | null>(null);
+  const [passcodeModalOpen, setPasscodeModalOpen] = useState(false);
+  const [currentPasscodeInput, setCurrentPasscodeInput] = useState('');
+  const [newPasscodeInput, setNewPasscodeInput] = useState('');
+  const [confirmPasscodeInput, setConfirmPasscodeInput] = useState('');
+  const [dayManagerOpen, setDayManagerOpen] = useState(false);
+  const [maintenanceOpen, setMaintenanceOpen] = useState(false);
+  const [maintenancePasscode, setMaintenancePasscode] = useState('');
+  const [pendingRealDay, setPendingRealDay] = useState<DayId | null>(null);
+  const [editableDays, setEditableDays] = useState<DayDefinition[]>([]);
+
+  const bills = useMemo(() => billsByDay[statsViewDay] ?? [], [billsByDay, statsViewDay]);
+
+  useEffect(() => {
+    setStatsViewDay(selectedDay);
+    setSelectedExportDays([selectedDay]);
+  }, [selectedDay]);
 
   const productStats = useMemo(
     () =>
@@ -117,16 +153,17 @@ export default function StatsScreen() {
 
   const dayTrend = useMemo(
     () =>
-      ([1, 2, 3] as DayId[]).map((day) => {
-        const dayBills = billsByDay[day] ?? [];
+      dayDefinitions.map((dayDef) => {
+        const dayBills = billsByDay[dayDef.id] ?? [];
         return {
-          day,
+          day: dayDef.id,
+          label: dayDef.label,
           orders: dayBills.length,
           revenue: getDayRevenue(dayBills),
           items: getDayItems(dayBills),
         };
       }),
-    [billsByDay],
+    [billsByDay, dayDefinitions],
   );
 
   const series = useMemo(() => {
@@ -145,20 +182,49 @@ export default function StatsScreen() {
     return active.map((entry) =>
       selectedProductId === null || entry.product.id === selectedProductId
         ? entry.color
-        : withOpacity(entry.color, 0.25),
+        : dimColor(entry.color, 0.25),
     );
   }, [productStats, selectedProductId, theme.colors.surfaceVariant]);
+
+  useEffect(() => {
+    let mounted = true;
+    const hydratePasscode = async () => {
+      const loaded = await loadStatsPasscode();
+      if (!mounted) {
+        return;
+      }
+      setStatsPasscode(loaded);
+    };
+    void hydratePasscode();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      setStatsViewDay(selectedDay);
+      setSelectedExportDays([selectedDay]);
+
+      return () => {
+        setIsUnlocked(false);
+        setPasscodeInput('');
+        setPasscodeError(null);
+        setPasscodeModalOpen(false);
+      };
+    }, [selectedDay]),
+  );
 
   const selectedHourEntry = selectedHour === null ? null : hourlyRevenue.find((entry) => entry.hour === selectedHour);
   const selectedHourShare = selectedHourEntry ? (selectedHourEntry.value * 100) / Math.max(1, totalRevenue) : 0;
 
   const switchDay = async (day: DayId) => {
-    await setSelectedDay(day);
+    setStatsViewDay(day);
   };
 
   const handleResetDay = async () => {
-    setResetUndoBills(billsByDay[selectedDay] ?? []);
-    await resetDayStats();
+    setResetUndoBills(billsByDay[statsViewDay] ?? []);
+    await replaceDayStats(statsViewDay, []);
     setConfirmResetOpen(false);
     setResetUndoVisible(true);
   };
@@ -167,7 +233,7 @@ export default function StatsScreen() {
     if (!resetUndoBills) {
       return;
     }
-    await replaceDayStats(selectedDay, resetUndoBills);
+    await replaceDayStats(statsViewDay, resetUndoBills);
     setResetUndoVisible(false);
     setResetUndoBills(null);
   };
@@ -212,7 +278,7 @@ export default function StatsScreen() {
   };
 
   const selectAllDays = () => {
-    setSelectedExportDays([1, 2, 3]);
+    setSelectedExportDays(dayDefinitions.map((entry) => entry.id));
   };
 
   const toggleProductHighlight = (productId: number) => {
@@ -221,6 +287,99 @@ export default function StatsScreen() {
 
   const toggleHourHighlight = (hour: number) => {
     setSelectedHour((prev) => (prev === hour ? null : hour));
+  };
+
+  const latestConfiguredDate = useMemo(() => {
+    const allDates = dayDefinitions.flatMap((entry) => entry.dates);
+    if (allDates.length === 0) {
+      return null;
+    }
+    return [...allDates].sort().at(-1) ?? null;
+  }, [dayDefinitions]);
+
+  const shouldSuggestDateUpdate = useMemo(() => {
+    if (!latestConfiguredDate) {
+      return false;
+    }
+    const latest = new Date(`${latestConfiguredDate}T00:00:00`);
+    const now = new Date();
+    const diffDays = (now.getTime() - latest.getTime()) / (1000 * 60 * 60 * 24);
+    return diffDays > 90;
+  }, [latestConfiguredDate]);
+
+  const addDayDefinition = () => {
+    const maxId = editableDays.reduce((max, entry) => Math.max(max, entry.id), 0);
+    setEditableDays((prev) => [...prev, { id: maxId + 1, label: `Tag ${maxId + 1}`, dates: [] }]);
+  };
+
+  const applyDayChanges = async () => {
+    const cleaned = editableDays
+      .map((entry) => ({
+        id: entry.id,
+        label: entry.label.trim() || `Tag ${entry.id}`,
+        dates: entry.dates
+          .map((date) => date.trim())
+          .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date)),
+      }))
+      .sort((a, b) => a.id - b.id);
+    if (cleaned.length === 0) {
+      setSnackbarText('Mindestens ein Tag ist erforderlich.');
+      return;
+    }
+    await setDayDefinitions(cleaned);
+    setDayManagerOpen(false);
+    setSnackbarText('Tage aktualisiert.');
+  };
+
+  const openDayManager = () => {
+    setEditableDays(dayDefinitions.map((entry) => ({ ...entry, dates: [...entry.dates] })));
+    setDayManagerOpen(true);
+  };
+
+  const confirmMaintenanceDayChange = async () => {
+    if (maintenancePasscode !== '0000' || pendingRealDay === null) {
+      setPasscodeError('Falsches Wartungspasswort.');
+      return;
+    }
+    await setSelectedDay(pendingRealDay);
+    setMaintenanceOpen(false);
+    setMaintenancePasscode('');
+    setPendingRealDay(null);
+    setPasscodeError(null);
+    setSnackbarText('Tatsächlicher Tag wurde geändert.');
+  };
+
+  const unlockStats = () => {
+    if (passcodeInput === statsPasscode) {
+      setIsUnlocked(true);
+      setPasscodeError(null);
+      setPasscodeInput('');
+      return;
+    }
+    setPasscodeError('Falsches Passwort.');
+  };
+
+  const updateStatsPasscode = async () => {
+    if (currentPasscodeInput !== statsPasscode) {
+      setPasscodeError('Aktuelles Passwort ist falsch.');
+      return;
+    }
+    if (!/^\d{4}$/.test(newPasscodeInput)) {
+      setPasscodeError('Neues Passwort muss 4 Ziffern haben.');
+      return;
+    }
+    if (newPasscodeInput !== confirmPasscodeInput) {
+      setPasscodeError('Neue Passwörter stimmen nicht überein.');
+      return;
+    }
+    await saveStatsPasscode(newPasscodeInput);
+    setStatsPasscode(newPasscodeInput);
+    setCurrentPasscodeInput('');
+    setNewPasscodeInput('');
+    setConfirmPasscodeInput('');
+    setPasscodeError(null);
+    setPasscodeModalOpen(false);
+    setSnackbarText('Passwort aktualisiert.');
   };
 
   const kpiItems = [
@@ -237,45 +396,100 @@ export default function StatsScreen() {
 
   return (
     <View style={[styles.screen, { backgroundColor: theme.colors.background }]}>
+      {!isUnlocked ? (
+        <View style={[styles.lockWrap, { backgroundColor: theme.colors.background }]}>
+          <Card style={[styles.lockCard, { backgroundColor: theme.colors.surface }]}>
+            <Card.Content style={styles.lockContent}>
+              <Text variant="headlineSmall" style={styles.title}>Statistik gesperrt</Text>
+              <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+                Passwort eingeben, um fortzufahren.
+              </Text>
+              <TextInput
+                mode="outlined"
+                label="Passwort"
+                value={passcodeInput}
+                onChangeText={(value) => {
+                  setPasscodeInput(value.replace(/\D/g, '').slice(0, 4));
+                  if (passcodeError) {
+                    setPasscodeError(null);
+                  }
+                }}
+                secureTextEntry
+                keyboardType="number-pad"
+                maxLength={4}
+              />
+              {passcodeError ? <Text style={{ color: theme.colors.error }}>{passcodeError}</Text> : null}
+              <Button mode="contained" onPress={unlockStats}>Entsperren</Button>
+            </Card.Content>
+          </Card>
+        </View>
+      ) : null}
+      {isUnlocked ? (
+        <>
       <View style={styles.glowTop} />
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={[styles.headerRow, isNarrow && styles.headerRowNarrow]}>
-          <View>
+        <View style={[styles.headerRow, isVeryNarrow && styles.headerRowNarrow]}>
+          <View style={styles.headerTitleWrap}>
             <Text variant="headlineMedium" style={styles.title}>Statistik</Text>
             <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
               Erweiterte Auswertung für den ausgewählten Tag
             </Text>
           </View>
           <View style={[styles.headerActions, isVeryNarrow && styles.headerActionsNarrow]}>
-            <Button mode="contained-tonal" compact onPress={() => void toggleThemeMode()}>
-              {themeMode === 'light' ? 'Dark Mode' : 'Light Mode'}
-            </Button>
-            <Button mode="contained-tonal" onPress={() => router.push('/historyView')}>
-              Bestellverlauf
-            </Button>
-            <Button mode="contained-tonal" onPress={() => setExportOpen(true)}>
-              Export
-            </Button>
+            <View style={[styles.headerActionGroup, isVeryNarrow && styles.headerActionGroupNarrow]}>
+              <Button mode="contained-tonal" compact style={isVeryNarrow ? styles.headerButtonNarrow : undefined} onPress={() => void toggleThemeMode()}>
+                {themeMode === 'light' ? 'Dark Mode' : 'Light Mode'}
+              </Button>
+              <Button mode="contained-tonal" compact style={isVeryNarrow ? styles.headerButtonNarrow : undefined} onPress={() => setPasscodeModalOpen(true)}>
+                Passwort
+              </Button>
+              <Button mode="contained-tonal" compact style={isVeryNarrow ? styles.headerButtonNarrow : undefined} onPress={openDayManager}>
+                Tage
+              </Button>
+              <Button mode="contained-tonal" compact style={isVeryNarrow ? styles.headerButtonNarrow : undefined} onPress={() => setMaintenanceOpen(true)}>
+                Wartungstag
+              </Button>
+            </View>
+            <View style={[styles.headerActionGroup, isVeryNarrow && styles.headerActionGroupNarrow]}>
+              <Button mode="contained-tonal" compact style={isVeryNarrow ? styles.headerButtonNarrow : undefined} onPress={() => setExportOpen(true)}>
+                Export
+              </Button>
+              <Button mode="contained-tonal" compact style={isVeryNarrow ? styles.headerButtonNarrow : undefined} onPress={() => router.push('/historyView')}>
+                Bestellverlauf
+              </Button>
+            </View>
           </View>
         </View>
 
         <View style={[styles.dayRow, isVeryNarrow && styles.dayRowNarrow]}>
-          {[1, 2, 3].map((day) => (
+          {dayDefinitions.map((dayDef) => (
             <Chip
-              key={day}
-              selected={selectedDay === day}
-              onPress={() => void switchDay(day as DayId)}
+              key={dayDef.id}
+              selected={statsViewDay === dayDef.id}
+              onPress={() => void switchDay(dayDef.id)}
               showSelectedCheck={false}
               style={[
                 styles.dayChip,
-                selectedDay === day ? { backgroundColor: theme.colors.primary } : { backgroundColor: theme.colors.surfaceVariant },
+                statsViewDay === dayDef.id ? { backgroundColor: theme.colors.primary } : { backgroundColor: theme.colors.surfaceVariant },
               ]}
-              textStyle={{ color: selectedDay === day ? theme.colors.onPrimary : theme.colors.onSurface, fontWeight: '700' }}
+              textStyle={{ color: statsViewDay === dayDef.id ? theme.colors.onPrimary : theme.colors.onSurface, fontWeight: '700' }}
             >
-              Tag {day}
+              {dayDef.label}
             </Chip>
           ))}
         </View>
+
+        {shouldSuggestDateUpdate ? (
+          <Card style={[styles.chartCard, { backgroundColor: theme.colors.surfaceVariant }]}>
+            <Card.Content>
+              <Text variant="titleMedium">Hinweis: Tagesdaten prüfen</Text>
+              <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+                Die letzte eingetragene Tageszuordnung ist älter als 3 Monate.
+              </Text>
+              <Button mode="contained-tonal" onPress={openDayManager}>Tage aktualisieren</Button>
+            </Card.Content>
+          </Card>
+        ) : null}
 
         <View style={styles.kpiRow}>
           {kpiItems.map((item) => (
@@ -383,7 +597,7 @@ export default function StatsScreen() {
                             if (selectedHour === entry.hour) {
                               return theme.colors.primary;
                             }
-                            return withOpacity(baseColor, 0.28);
+                            return dimColor(baseColor, 0.28);
                           })(),
                         },
                       ]}
@@ -394,11 +608,6 @@ export default function StatsScreen() {
               ))}
               </View>
             </ScrollView>
-            <View pointerEvents="none" style={styles.hourFadeWrap}>
-              <View style={[styles.hourFadeStep, { backgroundColor: theme.dark ? 'rgba(15,19,24,0.16)' : 'rgba(248,250,252,0.20)' }]} />
-              <View style={[styles.hourFadeStep, { backgroundColor: theme.dark ? 'rgba(15,19,24,0.28)' : 'rgba(248,250,252,0.34)' }]} />
-              <View style={[styles.hourFadeStep, { backgroundColor: theme.dark ? 'rgba(15,19,24,0.42)' : 'rgba(248,250,252,0.48)' }]} />
-            </View>
             {selectedHourEntry ? (
               <View style={[styles.hourInfoCard, { backgroundColor: theme.colors.surfaceVariant }]}>
                 <Text variant="titleMedium">Stunde {selectedHourEntry.hour}:00</Text>
@@ -417,7 +626,7 @@ export default function StatsScreen() {
             <View style={styles.trendWrap}>
               {dayTrend.map((entry) => (
                 <View key={entry.day} style={[styles.trendRow, isSmallScreen && styles.trendRowSmall]}>
-                  <Text variant="titleMedium" style={styles.trendDay}>Tag {entry.day}</Text>
+                  <Text variant="titleMedium" style={styles.trendDay}>{entry.label}</Text>
                   <Text variant="bodyMedium">{entry.orders} Bestellungen</Text>
                   <Text variant="bodyMedium">{entry.items} Artikel</Text>
                   <Text variant="bodyMedium" style={{ color: theme.colors.primary }}>{formatEuro(entry.revenue)}</Text>
@@ -437,7 +646,7 @@ export default function StatsScreen() {
       <ConfirmModal
         visible={confirmResetOpen}
         title="Statistik löschen?"
-        message={`Alle Bestellungen für Tag ${selectedDay} werden dauerhaft entfernt.`}
+        message={`Alle Bestellungen für ${dayDefinitions.find((entry) => entry.id === statsViewDay)?.label ?? `Tag ${statsViewDay}`} werden dauerhaft entfernt.`}
         confirmLabel="Löschen"
         tone="danger"
         onCancel={() => setConfirmResetOpen(false)}
@@ -445,11 +654,53 @@ export default function StatsScreen() {
       />
 
       <Portal>
+        <Modal visible={passcodeModalOpen} onDismiss={() => setPasscodeModalOpen(false)} contentContainerStyle={[styles.exportModalWrap, { backgroundColor: theme.colors.surface }, isNarrow && styles.exportModalWrapNarrow]}>
+          <View style={styles.exportScrollContent}>
+            <Text variant="headlineSmall" style={styles.sectionTitle}>Statistik-Passwort ändern</Text>
+            <TextInput
+              mode="outlined"
+              label="Aktuelles Passwort"
+              value={currentPasscodeInput}
+              onChangeText={(value) => setCurrentPasscodeInput(value.replace(/\D/g, '').slice(0, 4))}
+              secureTextEntry
+              keyboardType="number-pad"
+              maxLength={4}
+            />
+            <TextInput
+              mode="outlined"
+              label="Neues Passwort (4 Ziffern)"
+              value={newPasscodeInput}
+              onChangeText={(value) => setNewPasscodeInput(value.replace(/\D/g, '').slice(0, 4))}
+              secureTextEntry
+              keyboardType="number-pad"
+              maxLength={4}
+            />
+            <TextInput
+              mode="outlined"
+              label="Neues Passwort wiederholen"
+              value={confirmPasscodeInput}
+              onChangeText={(value) => setConfirmPasscodeInput(value.replace(/\D/g, '').slice(0, 4))}
+              secureTextEntry
+              keyboardType="number-pad"
+              maxLength={4}
+            />
+            {passcodeError ? <Text style={{ color: theme.colors.error }}>{passcodeError}</Text> : null}
+            <View style={styles.exportActionRow}>
+              <Button style={styles.exportActionButton} mode="contained" onPress={() => void updateStatsPasscode()}>
+                Speichern
+              </Button>
+              <Button style={styles.exportActionButton} mode="contained-tonal" onPress={() => setPasscodeModalOpen(false)}>
+                Abbrechen
+              </Button>
+            </View>
+          </View>
+        </Modal>
+
         <Modal visible={exportOpen} onDismiss={() => setExportOpen(false)} contentContainerStyle={[styles.exportModalWrap, { backgroundColor: theme.colors.surface }, isNarrow && styles.exportModalWrapNarrow]}>
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.exportScrollContent}>
             <Text variant="headlineSmall" style={styles.sectionTitle}>Statistik exportieren</Text>
             <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 4 }}>
-              Tag {selectedDay} in gewünschtem Format exportieren.
+              {dayDefinitions.find((entry) => entry.id === statsViewDay)?.label ?? `Tag ${statsViewDay}`} in gewünschtem Format exportieren.
             </Text>
             <View style={[styles.exportSectionBox, { backgroundColor: theme.colors.surfaceVariant }]}>
               <View style={[styles.exportSectionHeader, isNarrow && styles.exportSectionHeaderNarrow]}>
@@ -459,13 +710,13 @@ export default function StatsScreen() {
                 </Button>
               </View>
               <View style={styles.sectionChipWrap}>
-                {[1, 2, 3].map((day) => (
+                {dayDefinitions.map((dayDef) => (
                   <Chip
-                    key={day}
-                    selected={selectedExportDays.includes(day as DayId)}
-                    onPress={() => toggleExportDay(day as DayId)}
+                    key={dayDef.id}
+                    selected={selectedExportDays.includes(dayDef.id)}
+                    onPress={() => toggleExportDay(dayDef.id)}
                   >
-                    Tag {day}
+                    {dayDef.label}
                   </Chip>
                 ))}
               </View>
@@ -528,6 +779,86 @@ export default function StatsScreen() {
         </Modal>
       </Portal>
 
+      <Portal>
+        <Modal visible={dayManagerOpen} onDismiss={() => setDayManagerOpen(false)} contentContainerStyle={[styles.exportModalWrap, { backgroundColor: theme.colors.surface }, isNarrow && styles.exportModalWrapNarrow]}>
+          <ScrollView contentContainerStyle={styles.exportScrollContent}>
+            <Text variant="headlineSmall" style={styles.sectionTitle}>Tage und Daten verwalten</Text>
+            {editableDays.map((dayDef) => (
+              <View key={dayDef.id} style={[styles.exportSectionBox, { backgroundColor: theme.colors.surfaceVariant }]}>
+                <TextInput
+                  mode="outlined"
+                  label="Name"
+                  value={dayDef.label}
+                  onChangeText={(value) =>
+                    setEditableDays((prev) => prev.map((entry) => (entry.id === dayDef.id ? { ...entry, label: value } : entry)))
+                  }
+                />
+                <TextInput
+                  mode="outlined"
+                  label="Daten (YYYY-MM-DD, mit Komma getrennt)"
+                  value={dayDef.dates.join(', ')}
+                  onChangeText={(value) =>
+                    setEditableDays((prev) =>
+                      prev.map((entry) =>
+                        entry.id === dayDef.id
+                          ? { ...entry, dates: value.split(',').map((date) => date.trim()).filter(Boolean) }
+                          : entry,
+                      ),
+                    )
+                  }
+                />
+                <Button mode="text" textColor={theme.colors.error} onPress={() => setEditableDays((prev) => prev.filter((entry) => entry.id !== dayDef.id))}>
+                  Tag entfernen
+                </Button>
+              </View>
+            ))}
+            <Button mode="contained-tonal" onPress={addDayDefinition}>Tag hinzufügen</Button>
+            <View style={styles.exportActionRow}>
+              <Button style={styles.exportActionButton} mode="contained" onPress={() => void applyDayChanges()}>
+                Speichern
+              </Button>
+              <Button style={styles.exportActionButton} mode="contained-tonal" onPress={() => setDayManagerOpen(false)}>
+                Schließen
+              </Button>
+            </View>
+          </ScrollView>
+        </Modal>
+      </Portal>
+
+      <Portal>
+        <Modal visible={maintenanceOpen} onDismiss={() => setMaintenanceOpen(false)} contentContainerStyle={[styles.exportModalWrap, { backgroundColor: theme.colors.surface }, isNarrow && styles.exportModalWrapNarrow]}>
+          <View style={styles.exportScrollContent}>
+            <Text variant="headlineSmall" style={styles.sectionTitle}>Tatsächlichen Tag ändern</Text>
+            <TextInput
+              mode="outlined"
+              label="Wartungspasswort"
+              value={maintenancePasscode}
+              onChangeText={setMaintenancePasscode}
+              secureTextEntry
+            />
+            <View style={styles.sectionChipWrap}>
+              {dayDefinitions.map((dayDef) => (
+                <Chip
+                  key={dayDef.id}
+                  selected={pendingRealDay === dayDef.id}
+                  onPress={() => setPendingRealDay(dayDef.id)}
+                >
+                  {dayDef.label}
+                </Chip>
+              ))}
+            </View>
+            <View style={styles.exportActionRow}>
+              <Button style={styles.exportActionButton} mode="contained" onPress={() => void confirmMaintenanceDayChange()}>
+                Übernehmen
+              </Button>
+              <Button style={styles.exportActionButton} mode="contained-tonal" onPress={() => setMaintenanceOpen(false)}>
+                Abbrechen
+              </Button>
+            </View>
+          </View>
+        </Modal>
+      </Portal>
+
       <Snackbar visible={Boolean(snackbarText)} onDismiss={() => setSnackbarText(null)} duration={2400}>
         <Text>{snackbarText}</Text>
       </Snackbar>
@@ -537,8 +868,10 @@ export default function StatsScreen() {
         duration={5000}
         action={{ label: 'Rückgängig', onPress: () => void handleUndoReset() }}
       >
-        <Text>Tag {selectedDay} wurde zurückgesetzt</Text>
+        <Text>{dayDefinitions.find((entry) => entry.id === statsViewDay)?.label ?? `Tag ${statsViewDay}`} wurde zurückgesetzt</Text>
       </Snackbar>
+        </>
+      ) : null}
     </View>
   );
 }
@@ -546,11 +879,18 @@ export default function StatsScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   glowTop: { position: 'absolute', left: -130, top: -110, width: 300, height: 300, borderRadius: 999, backgroundColor: 'rgba(111, 214, 182, 0.12)' },
-  content: { paddingHorizontal: 20, paddingTop: 58, paddingBottom: 24, gap: 14 },
+  content: { paddingHorizontal: 20, paddingTop: 36, paddingBottom: 24, gap: 14 },
+  lockWrap: { flex: 1, justifyContent: 'center', paddingHorizontal: 20 },
+  lockCard: { borderRadius: 16 },
+  lockContent: { gap: 12 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
-  headerActions: { flexDirection: 'row', gap: 8 },
-  headerRowNarrow: { alignItems: 'flex-start', flexWrap: 'wrap' },
-  headerActionsNarrow: { flexWrap: 'wrap' },
+  headerTitleWrap: { flexShrink: 1 },
+  headerActions: { flexDirection: 'row', gap: 10, alignItems: 'center', alignSelf: 'flex-end', maxWidth: '100%' },
+  headerActionGroup: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', maxWidth: '100%' },
+  headerActionGroupNarrow: { width: '100%', justifyContent: 'flex-end' },
+  headerRowNarrow: { flexDirection: 'column', alignItems: 'stretch', gap: 10 },
+  headerActionsNarrow: { flexDirection: 'column', alignItems: 'stretch', width: '100%', alignSelf: 'stretch', gap: 8 },
+  headerButtonNarrow: { marginLeft: 0 },
   title: { fontWeight: '700' },
   dayRow: { flexDirection: 'row', gap: 10, marginVertical: 4 },
   dayRowNarrow: { flexWrap: 'wrap' },
@@ -589,20 +929,6 @@ const styles = StyleSheet.create({
   hourBarTrack: { justifyContent: 'flex-end', overflow: 'hidden' },
   hourBarFill: {},
   hourLabel: { fontSize: 9, marginTop: 4 },
-  hourFadeWrap: {
-    position: 'absolute',
-    right: 2,
-    top: 56,
-    height: 84,
-    width: 18,
-    flexDirection: 'row',
-    borderTopLeftRadius: 10,
-    borderBottomLeftRadius: 10,
-    overflow: 'hidden',
-  },
-  hourFadeStep: {
-    flex: 1,
-  },
   hourInfoCard: { marginTop: 12, borderRadius: 12, padding: 10, gap: 4 },
   trendWrap: { gap: 8 },
   trendRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },

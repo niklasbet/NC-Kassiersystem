@@ -27,7 +27,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useAppData } from '@/src/store/AppDataContext';
-import type { BillItems, DayId, Product } from '@/src/store/types';
+import type { BillItems, Product } from '@/src/store/types';
 import { palette } from '@/src/theme/appTheme';
 import { formatEuro } from '@/src/utils/format';
 import { ConfirmModal } from '@/components/ConfirmModal';
@@ -42,7 +42,7 @@ export default function HomeScreen() {
   const isSmallScreen = width < 560;
   const isTabletWide = width >= 820;
 
-  const { products, addBill, selectedDay, setSelectedDay } = useAppData();
+  const { products, dayDefinitions, addBill, selectedDay } = useAppData();
 
   const [draft, setDraft] = useState<BillItems>({});
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
@@ -186,29 +186,9 @@ export default function HomeScreen() {
           <Text variant={isSmallScreen ? 'titleLarge' : 'headlineMedium'} style={styles.title}>
             Kassensystem
           </Text>
-          <View style={styles.daySwitchRow}>
-            {([1, 2, 3] as DayId[]).map((day) => (
-              <Pressable
-                key={day}
-                onPress={() => {
-                  void setSelectedDay(day);
-                }}
-                style={[
-                  styles.daySwitchChip,
-                  selectedDay === day
-                    ? { backgroundColor: theme.colors.primary }
-                    : { backgroundColor: theme.colors.surfaceVariant },
-                ]}
-              >
-                <Text
-                  variant="labelMedium"
-                  style={{ color: selectedDay === day ? theme.colors.onPrimary : theme.colors.onSurface }}
-                >
-                  Tag {day}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 4 }}>
+            Aktueller Tag: {dayDefinitions.find((entry) => entry.id === selectedDay)?.label ?? `Tag ${selectedDay}`}
+          </Text>
         </View>
         <View style={styles.headerActions}>
           <Button
@@ -338,7 +318,9 @@ export default function HomeScreen() {
             )}
             ListEmptyComponent={
               <Surface style={[styles.emptyState, { backgroundColor: theme.colors.surfaceVariant }]}> 
-                <Text variant="titleMedium">Keine Produkte für Tag {selectedDay}</Text>
+                <Text variant="titleMedium">
+                  Keine Produkte für {dayDefinitions.find((entry) => entry.id === selectedDay)?.label ?? `Tag ${selectedDay}`}
+                </Text>
                 <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
                   Passe Tage in „Produkte verwalten“ an oder lege ein neues Produkt an.
                 </Text>
@@ -609,17 +591,6 @@ const styles = StyleSheet.create({
   },
   title: {
     fontWeight: '700',
-  },
-  daySwitchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 6,
-  },
-  daySwitchChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
   },
   mainArea: {
     flex: 1,

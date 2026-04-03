@@ -19,7 +19,6 @@ import { useAppData } from '@/src/store/AppDataContext';
 import type { DayId, Product } from '@/src/store/types';
 import { formatEuro } from '@/src/utils/format';
 import { getProductImageSource } from '@/src/utils/productImages';
-const ALL_DAYS: DayId[] = [1, 2, 3];
 
 type FormState = {
   name: string;
@@ -27,14 +26,13 @@ type FormState = {
   availableDays: DayId[];
 };
 
-const EMPTY_FORM: FormState = { name: '', price: '', availableDays: [...ALL_DAYS] };
-
 export default function ProductManagementScreen() {
   const theme = useTheme();
   const { width } = useWindowDimensions();
   const isNarrow = width < 860;
   const {
     products,
+    dayDefinitions,
     upsertProduct,
     removeProduct,
     toggleProductStats,
@@ -45,7 +43,11 @@ export default function ProductManagementScreen() {
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [form, setForm] = useState<FormState>({
+    name: '',
+    price: '',
+    availableDays: dayDefinitions.map((entry) => entry.id),
+  });
   const [isSaving, setIsSaving] = useState(false);
 
   const sortedProducts = useMemo(
@@ -55,7 +57,11 @@ export default function ProductManagementScreen() {
 
   const openCreate = () => {
     setEditingProduct(null);
-    setForm(EMPTY_FORM);
+    setForm({
+      name: '',
+      price: '',
+      availableDays: dayDefinitions.map((entry) => entry.id),
+    });
     setEditorOpen(true);
   };
 
@@ -114,7 +120,11 @@ export default function ProductManagementScreen() {
       );
 
       setEditorOpen(false);
-      setForm(EMPTY_FORM);
+      setForm({
+        name: '',
+        price: '',
+        availableDays: dayDefinitions.map((entry) => entry.id),
+      });
       setEditingProduct(null);
     } finally {
       setIsSaving(false);
@@ -177,21 +187,21 @@ export default function ProductManagementScreen() {
               </Text>
 
               <View style={styles.dayChipWrap}>
-                {ALL_DAYS.map((day) => {
-                  const selected = item.availableDays.includes(day);
+                {dayDefinitions.map((dayDef) => {
+                  const selected = item.availableDays.includes(dayDef.id);
                   return (
                     <Chip
-                      key={`${item.id}-${day}`}
+                      key={`${item.id}-${dayDef.id}`}
                       compact
                       selected={selected}
                       showSelectedCheck={false}
                       onPress={() => {
-                        void toggleProductDay(item, day);
+                        void toggleProductDay(item, dayDef.id);
                       }}
                       style={{ backgroundColor: selected ? theme.colors.secondary : theme.colors.surfaceVariant }}
                       textStyle={{ color: selected ? theme.colors.onSecondary : theme.colors.onSurface }}
                     >
-                      T{day}
+                      {dayDef.label}
                     </Chip>
                   );
                 })}
@@ -296,18 +306,18 @@ export default function ProductManagementScreen() {
                 Angeboten an Tag:
               </Text>
               <View style={styles.dayChipWrap}>
-                {ALL_DAYS.map((day) => {
-                  const selected = form.availableDays.includes(day);
+                {dayDefinitions.map((dayDef) => {
+                  const selected = form.availableDays.includes(dayDef.id);
                   return (
                     <Chip
-                      key={day}
+                      key={dayDef.id}
                       selected={selected}
-                      onPress={() => toggleFormDay(day)}
+                      onPress={() => toggleFormDay(dayDef.id)}
                       showSelectedCheck={false}
                       style={{ backgroundColor: selected ? theme.colors.primary : theme.colors.surfaceVariant }}
                       textStyle={{ color: selected ? theme.colors.onPrimary : theme.colors.onSurface }}
                     >
-                      Tag {day}
+                      {dayDef.label}
                     </Chip>
                   );
                 })}

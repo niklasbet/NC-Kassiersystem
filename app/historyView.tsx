@@ -19,8 +19,9 @@ const MIN_PAGE_SIZE = 1;
 export default function HistoryScreen() {
   const theme = useTheme();
   const { width } = useWindowDimensions();
-  const { bills, products, removeBill, selectedDay } = useAppData();
+  const { bills, products, dayDefinitions, removeBill, selectedDay } = useAppData();
   const isNarrow = width < 680;
+  const selectedDayLabel = dayDefinitions.find((entry) => entry.id === selectedDay)?.label ?? `Tag ${selectedDay}`;
 
   const [page, setPage] = useState(0);
   const [listHeight, setListHeight] = useState(0);
@@ -85,7 +86,7 @@ export default function HistoryScreen() {
           <View>
             <Text variant="headlineMedium" style={styles.title}>Bestellverlauf</Text>
             <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
-              Tag {selectedDay} · {orderedBills.length} gespeicherte Bestellungen
+              {selectedDayLabel} · {orderedBills.length} gespeicherte Bestellungen
             </Text>
           </View>
           <Button

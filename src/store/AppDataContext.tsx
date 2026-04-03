@@ -1,18 +1,22 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 import {
+  DEFAULT_DAY_DEFINITIONS,
   DEFAULT_STATS,
+  loadDayDefinitions,
   loadProducts,
   loadSelectedDay,
   loadStats,
   loadThemeMode,
+  resolveDayFromDate,
+  saveDayDefinitions,
   saveProducts,
   saveSelectedDay,
   saveStats,
   saveThemeMode,
   type ThemeMode,
 } from './storage';
-import type { BillItems, BillRecord, DayId, Product, StatsByDay } from './types';
+import type { BillItems, BillRecord, DayDefinition, DayId, Product, StatsByDay } from './types';
 
 type ProductInput = {
   name: string;
@@ -23,11 +27,13 @@ type ProductInput = {
 type AppDataContextType = {
   isReady: boolean;
   products: Product[];
+  dayDefinitions: DayDefinition[];
   selectedDay: DayId;
   themeMode: ThemeMode;
   bills: BillRecord[];
   billsByDay: StatsByDay;
   setSelectedDay: (day: DayId) => Promise<void>;
+  setDayDefinitions: (dayDefinitions: DayDefinition[]) => Promise<void>;
   setThemeMode: (mode: ThemeMode) => Promise<void>;
   toggleThemeMode: () => Promise<void>;
   upsertProduct: (input: ProductInput, id?: number) => Promise<void>;
@@ -61,6 +67,7 @@ function buildBillTotal(items: BillItems, products: Product[]): number {
 export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const [isReady, setIsReady] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
+  const [dayDefinitions, setDayDefinitionsState] = useState<DayDefinition[]>(DEFAULT_DAY_DEFINITIONS);
   const [selectedDay, setSelectedDayState] = useState<DayId>(1);
   const [themeMode, setThemeModeState] = useState<ThemeMode>('light');
   const [statsByDay, setStatsByDay] = useState<StatsByDay>(DEFAULT_STATS);
@@ -69,22 +76,34 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     let mounted = true;
 
     const hydrate = async () => {
-      const [storedProducts, storedStats, storedDay, storedThemeMode] = await Promise.all([
+      const [storedProducts, storedStats, storedDay, storedThemeMode, storedDayDefinitions] = await Promise.all([
         loadProducts(),
         loadStats(),
         loadSelectedDay(),
         loadThemeMode(),
+        loadDayDefinitions(),
       ]);
 
       if (!mounted) {
         return;
       }
 
+      const activeDayDefinitions = storedDayDefinitions.length > 0 ? storedDayDefinitions : DEFAULT_DAY_DEFINITIONS;
+      const autoDay = resolveDayFromDate(activeDayDefinitions, new Date());
+      const hasStoredDay = activeDayDefinitions.some((entry) => entry.id === storedDay);
+      const fallbackDay = activeDayDefinitions[0]?.id ?? 1;
+      const nextSelectedDay = autoDay ?? (hasStoredDay ? storedDay : fallbackDay);
+
       setProducts(storedProducts);
       setStatsByDay(storedStats);
-      setSelectedDayState(storedDay);
+      setDayDefinitionsState(activeDayDefinitions);
+      setSelectedDayState(nextSelectedDay);
       setThemeModeState(storedThemeMode);
       setIsReady(true);
+
+      if (nextSelectedDay !== storedDay) {
+        await saveSelectedDay(nextSelectedDay);
+      }
     };
 
     void hydrate();
@@ -99,6 +118,30 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     await saveSelectedDay(day);
   }, []);
 
+  const setDayDefinitions = useCallback(async (nextDefinitions: DayDefinition[]) => {
+    const normalized = nextDefinitions
+      .map((entry) => ({
+        id: entry.id,
+        label: entry.label.trim() || `Tag ${entry.id}`,
+        dates: Array.from(new Set(entry.dates)),
+      }))
+      .filter((entry) => Number.isInteger(entry.id) && entry.id > 0)
+      .sort((a, b) => a.id - b.id);
+
+    if (normalized.length === 0) {
+      return;
+    }
+
+    const autoDay = resolveDayFromDate(normalized, new Date());
+    const fallbackDay = normalized[0].id;
+    const currentStillValid = normalized.some((entry) => entry.id === selectedDay);
+    const nextSelectedDay = autoDay ?? (currentStillValid ? selectedDay : fallbackDay);
+
+    setDayDefinitionsState(normalized);
+    setSelectedDayState(nextSelectedDay);
+    await Promise.all([saveDayDefinitions(normalized), saveSelectedDay(nextSelectedDay)]);
+  }, [selectedDay]);
+
   const setThemeMode = useCallback(async (mode: ThemeMode) => {
     setThemeModeState(mode);
     await saveThemeMode(mode);
@@ -112,9 +155,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
   const upsertProduct = useCallback(async (input: ProductInput, id?: number) => {
     const normalizedName = input.name.trim();
-    const normalizedDays = Array.from(new Set(input.availableDays)).filter(
-      (day): day is DayId => day === 1 || day === 2 || day === 3,
-    );
+    const validDayIds = new Set(dayDefinitions.map((entry) => entry.id));
+    const normalizedDays = Array.from(new Set(input.availableDays)).filter((day): day is DayId => validDayIds.has(day));
 
     if (!normalizedName || Number.isNaN(input.price) || input.price < 0 || normalizedDays.length === 0) {
       return;
@@ -148,28 +190,22 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
     setProducts(nextProducts);
     await saveProducts(nextProducts);
-  }, [products]);
+  }, [dayDefinitions, products]);
 
   const removeProduct = useCallback(async (id: number) => {
     const nextProducts = products.filter((entry) => entry.id !== id);
 
-    const nextStats: StatsByDay = {
-      1: statsByDay[1].map((bill) => {
+    const nextStats: StatsByDay = Object.fromEntries(
+      Object.entries(statsByDay).map(([dayKey, dayBills]) => {
+        const dayId = Number(dayKey);
+        const normalizedBills = (dayBills as BillRecord[]).map((bill) => {
         const items = { ...bill.items };
         delete items[id];
         return { ...bill, items, total: buildBillTotal(items, nextProducts) };
+        });
+        return [dayId, normalizedBills];
       }),
-      2: statsByDay[2].map((bill) => {
-        const items = { ...bill.items };
-        delete items[id];
-        return { ...bill, items, total: buildBillTotal(items, nextProducts) };
-      }),
-      3: statsByDay[3].map((bill) => {
-        const items = { ...bill.items };
-        delete items[id];
-        return { ...bill, items, total: buildBillTotal(items, nextProducts) };
-      }),
-    };
+    );
 
     setProducts(nextProducts);
     setStatsByDay(nextStats);
@@ -187,9 +223,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   }, [products]);
 
   const setProductAvailability = useCallback(async (id: number, availableDays: DayId[]) => {
-    const normalizedDays = Array.from(new Set(availableDays)).filter(
-      (day): day is DayId => day === 1 || day === 2 || day === 3,
-    );
+    const validDayIds = new Set(dayDefinitions.map((entry) => entry.id));
+    const normalizedDays = Array.from(new Set(availableDays)).filter((day): day is DayId => validDayIds.has(day));
 
     if (normalizedDays.length === 0) {
       return;
@@ -201,7 +236,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
     setProducts(nextProducts);
     await saveProducts(nextProducts);
-  }, [products]);
+  }, [dayDefinitions, products]);
 
   const updateProductImage = useCallback(async (id: number, imageUri?: string) => {
     const nextProducts = products.map((entry) =>
@@ -334,11 +369,13 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<AppDataContextType>(() => ({
     isReady,
     products,
+    dayDefinitions,
     selectedDay,
     themeMode,
     bills: statsByDay[selectedDay] ?? [],
     billsByDay: statsByDay,
     setSelectedDay,
+    setDayDefinitions,
     setThemeMode,
     toggleThemeMode,
     upsertProduct,
@@ -356,11 +393,13 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     addBill,
     isReady,
     products,
+    dayDefinitions,
     removeBill,
     removeProduct,
     resetDayStats,
     replaceDayStats,
     selectedDay,
+    setDayDefinitions,
     setThemeMode,
     setSelectedDay,
     statsByDay,

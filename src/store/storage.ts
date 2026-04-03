@@ -1,30 +1,39 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import type { DayId, Product, StatsByDay } from './types';
+import type { DayDefinition, DayId, Product, StatsByDay } from './types';
 
 const PRODUCTS_KEY = 'products_v2';
 const STATS_KEY = 'stats_by_day_v2';
 const SELECTED_DAY_KEY = 'selected_day_v2';
 const THEME_MODE_KEY = 'theme_mode_v1';
+const STATS_PASSCODE_KEY = 'stats_passcode_v1';
+const DAY_DEFINITIONS_KEY = 'day_definitions_v1';
 
-export const DEFAULT_STATS: StatsByDay = {
-  1: [],
-  2: [],
-  3: [],
-};
+export const DEFAULT_DAY_DEFINITIONS: DayDefinition[] = [
+  { id: 1, label: 'Tag 1', dates: [] },
+  { id: 2, label: 'Tag 2', dates: [] },
+  { id: 3, label: 'Tag 3', dates: [] },
+];
 
-const ALL_DAYS: DayId[] = [1, 2, 3];
+export const DEFAULT_STATS: StatsByDay = {};
 
 function normalizeDays(value: unknown): DayId[] {
   if (!Array.isArray(value)) {
-    return [...ALL_DAYS];
+    return DEFAULT_DAY_DEFINITIONS.map((entry) => entry.id);
   }
 
   const normalized = value
     .map((entry) => Number(entry))
-    .filter((entry): entry is DayId => entry === 1 || entry === 2 || entry === 3);
+    .filter((entry): entry is DayId => Number.isInteger(entry) && entry > 0);
 
-  return normalized.length > 0 ? Array.from(new Set(normalized)) : [...ALL_DAYS];
+  return normalized.length > 0 ? Array.from(new Set(normalized)) : DEFAULT_DAY_DEFINITIONS.map((entry) => entry.id);
+}
+
+function normalizeDate(value: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return null;
+  }
+  return value;
 }
 
 export async function loadProducts(): Promise<Product[]> {
@@ -77,12 +86,19 @@ export async function loadStats(): Promise<StatsByDay> {
   }
 
   try {
-    const parsed = JSON.parse(raw) as Partial<StatsByDay>;
-    return {
-      1: parsed[1] ?? [],
-      2: parsed[2] ?? [],
-      3: parsed[3] ?? [],
-    };
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object') {
+      return DEFAULT_STATS;
+    }
+    const normalized: StatsByDay = {};
+    Object.entries(parsed).forEach(([key, value]) => {
+      const dayId = Number(key);
+      if (!Number.isInteger(dayId) || dayId <= 0) {
+        return;
+      }
+      normalized[dayId] = Array.isArray(value) ? (value as StatsByDay[DayId]) : [];
+    });
+    return normalized;
   } catch {
     return DEFAULT_STATS;
   }
@@ -99,7 +115,7 @@ export async function loadSelectedDay(): Promise<DayId> {
   }
 
   const value = Number(raw);
-  if (value === 1 || value === 2 || value === 3) {
+  if (Number.isInteger(value) && value > 0) {
     return value;
   }
 
@@ -119,4 +135,70 @@ export async function loadThemeMode(): Promise<ThemeMode> {
 
 export async function saveThemeMode(mode: ThemeMode): Promise<void> {
   await AsyncStorage.setItem(THEME_MODE_KEY, mode);
+}
+
+export async function loadStatsPasscode(): Promise<string> {
+  const raw = await AsyncStorage.getItem(STATS_PASSCODE_KEY);
+  if (!raw || raw.trim().length === 0) {
+    return '0000';
+  }
+  return raw;
+}
+
+export async function saveStatsPasscode(passcode: string): Promise<void> {
+  await AsyncStorage.setItem(STATS_PASSCODE_KEY, passcode);
+}
+
+export async function loadDayDefinitions(): Promise<DayDefinition[]> {
+  const raw = await AsyncStorage.getItem(DAY_DEFINITIONS_KEY);
+  if (!raw) {
+    return DEFAULT_DAY_DEFINITIONS;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return DEFAULT_DAY_DEFINITIONS;
+    }
+    const normalized = parsed
+      .map((entry): DayDefinition | null => {
+        if (!entry || typeof entry !== 'object') {
+          return null;
+        }
+        const source = entry as Partial<DayDefinition>;
+        const id = Number(source.id);
+        if (!Number.isInteger(id) || id <= 0) {
+          return null;
+        }
+        const label = typeof source.label === 'string' && source.label.trim().length > 0
+          ? source.label.trim()
+          : `Tag ${id}`;
+        const dates = Array.isArray(source.dates)
+          ? Array.from(
+              new Set(
+                source.dates
+                  .map((date) => (typeof date === 'string' ? normalizeDate(date.trim()) : null))
+                  .filter((date): date is string => Boolean(date)),
+              ),
+            )
+          : [];
+        return { id, label, dates };
+      })
+      .filter((entry): entry is DayDefinition => entry !== null)
+      .sort((a, b) => a.id - b.id);
+
+    return normalized.length > 0 ? normalized : DEFAULT_DAY_DEFINITIONS;
+  } catch {
+    return DEFAULT_DAY_DEFINITIONS;
+  }
+}
+
+export async function saveDayDefinitions(dayDefinitions: DayDefinition[]): Promise<void> {
+  await AsyncStorage.setItem(DAY_DEFINITIONS_KEY, JSON.stringify(dayDefinitions));
+}
+
+export function resolveDayFromDate(dayDefinitions: DayDefinition[], date: Date): DayId | null {
+  const isoDate = date.toISOString().slice(0, 10);
+  const match = dayDefinitions.find((entry) => entry.dates.includes(isoDate));
+  return match?.id ?? null;
 }

@@ -1,4 +1,10 @@
-export type DayId = 1 | 2 | 3;
+export type DayId = number;
+
+export type DayDefinition = {
+  id: DayId;
+  label: string;
+  dates: string[]; // YYYY-MM-DD
+};
 
 export type Product = {
   id: number;
