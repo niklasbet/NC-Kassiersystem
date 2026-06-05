@@ -404,7 +404,14 @@ export default function HomeScreen() {
               </Text>
             </View>
 
-            <Button mode="contained" compact style={isSmallScreen ? styles.bottomActionButtonSmall : undefined} onPress={completeOrder} disabled={orderLines.length === 0}>
+            <Button
+              mode="contained"
+              style={styles.completeOrderButton}
+              contentStyle={styles.completeOrderButtonContent}
+              labelStyle={styles.completeOrderButtonLabel}
+              onPress={completeOrder}
+              disabled={orderLines.length === 0}
+            >
               Bestellung abschließen
             </Button>
             <Button
@@ -485,7 +492,9 @@ export default function HomeScreen() {
               </View>
               <Button
                 mode="contained"
-                compact
+                style={styles.completeOrderButton}
+                contentStyle={styles.completeOrderButtonContent}
+                labelStyle={styles.completeOrderButtonLabel}
                 onPress={() => {
                   void completeOrder();
                   setOrderModalOpen(false);
@@ -768,7 +777,21 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   actionSpacing: {
-    marginTop: 2,
+    marginTop: 14,
+  },
+  completeOrderButton: {
+    marginTop: 4,
+    borderRadius: 28,
+    overflow: 'hidden',
+  },
+  completeOrderButtonContent: {
+    minHeight: 132,
+    borderRadius: 28,
+  },
+  completeOrderButtonLabel: {
+    fontSize: 18,
+    fontWeight: '700',
+    lineHeight: 24,
   },
   bottomActionButtonSmall: {
     minHeight: 44,
